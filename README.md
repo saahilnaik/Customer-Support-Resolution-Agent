@@ -49,6 +49,26 @@ the approval gate, so side effects never run on an unapproved or replayed step.
 6. **Run the tests** (no API key or network needed): `python -m pytest -q`.
 7. **Reset demo data:** stop the server and delete `data/support.db` and `data/checkpoints.db*`.
 
+### Quick start (exact steps, Windows PowerShell)
+
+```powershell
+cd "<path-to>\Customer Support Resolution Agent"
+.venv\Scripts\activate
+python -m uvicorn app.main:app
+```
+
+Expected output:
+
+```
+INFO:     Waiting for application startup.
+... INFO support: ready (rag=_FastEmbedder)
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+```
+
+Then open http://127.0.0.1:8000 (redirects to the Swagger UI at `/docs`). Stop with `Ctrl+C`.
+`rag=_FastEmbedder` means the local embedding model loaded; `rag=_TfidfEmbedder`-style output means the offline fallback is in use.
+
 ### Troubleshooting
 - **Every chat is answered with "passed this to a human agent":** the LLM call is failing and the agent
   is escalating by design. Check the server log for the real error (missing key, `model_not_found`, rate limit).

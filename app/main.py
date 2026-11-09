@@ -4,7 +4,7 @@ import sqlite3
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse, Response
 from langgraph.checkpoint.sqlite import SqliteSaver
 
 from app.api.routes import router
@@ -39,6 +39,16 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Customer Support Resolution Agent", lifespan=lifespan)
 app.include_router(router)
 app.include_router(mock_router)
+
+
+@app.get("/", include_in_schema=False)
+async def root():
+    return RedirectResponse(url="/docs")
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    return Response(status_code=204)
 
 
 @app.exception_handler(Exception)
