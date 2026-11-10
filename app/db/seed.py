@@ -1,11 +1,20 @@
 from datetime import datetime, timedelta, timezone
 
+from app.config import get_settings
 from app.db.models import Customer, Order
 from app.db.session import session_scope
 
 
 def seed() -> None:
-    """Idempotent demo data."""
+    """Idempotent demo data (customers/orders, plus demo API keys if enabled)."""
+    _seed_customers()
+    if get_settings().seed_demo_keys:
+        from app.auth import seed_demo_keys  # avoid import cycle at module load
+
+        seed_demo_keys()
+
+
+def _seed_customers() -> None:
     now = datetime.now(timezone.utc)
     with session_scope() as s:
         if s.get(Customer, "C001"):

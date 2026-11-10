@@ -11,6 +11,7 @@ A multi-agent customer-support system built with **LangGraph + FastAPI**, free t
 | API integration | `app/integrations/external_client.py` (httpx + retries + idempotency key) against a mock service at `/mock` |
 | RAG | `app/rag/retriever.py`: local fastembed embeddings (TF-IDF fallback) over `data/kb/*.md`, cited answers, "I don't know" on low confidence |
 | Human-in-the-loop | refunds over `$50` and cancellations of shipped orders call `interrupt()` in `approval_gate`; state is checkpointed in SQLite; resume via `POST /approvals/{thread_id}` |
+| Auth | `app/auth.py`: hashed API keys (`X-API-Key`), `customer` role bound to one account, `reviewer` role for approvals; decisions record who made them |
 | Error handling | LLM retry/backoff, external API retry, `safe_node` fallback to escalation, graceful degradation, structured errors from tools, global 500 handler |
 
 ## Graph
@@ -52,7 +53,8 @@ For order changes the model only extracts what the customer wants; whether it is
    ```
    Wait for `Application startup complete`. The first start downloads the small embedding model
    (~130 MB) once; offline it falls back to TF-IDF. The SQLite databases are created in `data/`.
-5. **Try it:** open http://127.0.0.1:8000/docs and use the Swagger UI, or run the curl flows below.
+5. **Try it:** open http://127.0.0.1:8000/docs, click **Authorize** and enter an API key (see
+   [Authentication](#authentication)), or run the curl flows below.
    Seeded customers: `C001` (Alice), `C002` (Bob), `C003` (Carla); orders `ORD-1001`, `ORD-1002`,
    `ORD-2001`, `ORD-2002`, `ORD-3001`.
 6. **Run the tests** (no API key or network needed): `python -m pytest -q`.
@@ -89,39 +91,65 @@ Then open http://127.0.0.1:8000 (redirects to the Swagger UI at `/docs`). Stop w
 - **Changed `.env`?** `--reload` only watches `.py` files; restart the server. Also wait for startup to
   finish after any reload before sending requests.
 
+## Authentication
+
+Every endpoint except `/health`, `/docs` and the `/mock` service needs an `X-API-Key` header.
+The customer is taken from the key, so `customer_id` in the `/chat` body is optional (if sent, it must match).
+
+| Role | Can | Cannot |
+|---|---|---|
+| `customer` (bound to one customer) | `POST /chat` as that customer, own threads only; `GET /tickets` (own only) | see other customers' threads/tickets, approvals |
+| `reviewer` | `GET /approvals`, `POST /approvals/{thread_id}` (recorded as `decided_by`), all `/tickets` | chat |
+
+Missing/invalid/revoked key -> `401`; wrong role or someone else's thread -> `403`; another customer's ticket -> `404`.
+
+**Demo keys** (seeded while `SEED_DEMO_KEYS=true`, the default; set it to `false` anywhere real, these are public):
+`demo-key-alice` (C001), `demo-key-bob` (C002), `demo-key-carla` (C003), `demo-key-reviewer`.
+
+**Real keys:** keys are random and stored only as SHA-256 hashes, so they're shown once:
+```powershell
+python -m app.auth create-key --role reviewer --name "Dana"
+python -m app.auth create-key --role customer --name "alice-mobile" --customer C001
+python -m app.auth revoke --name "Dana"
+```
+
 ## Demo flows
 
 ```bash
+ALICE='X-API-Key: demo-key-alice'; CARLA='X-API-Key: demo-key-carla'; REVIEWER='X-API-Key: demo-key-reviewer'
+JSON='content-type: application/json'
+
 # 1. Policy question (RAG)
-curl -X POST localhost:8000/chat -H 'content-type: application/json' \
-  -d '{"customer_id":"C001","message":"How long do I have to return an item?"}'
+curl -X POST localhost:8000/chat -H "$ALICE" -H "$JSON" \
+  -d '{"message":"How long do I have to return an item?"}'
 
 # 2. Order status (tool calling + external shipping API)
-curl -X POST localhost:8000/chat -H 'content-type: application/json' \
-  -d '{"customer_id":"C001","message":"Where is order ORD-1002?"}'
+curl -X POST localhost:8000/chat -H "$ALICE" -H "$JSON" -d '{"message":"Where is order ORD-1002?"}'
 
 # 3. Complaint -> ticket
-curl -X POST localhost:8000/chat -H 'content-type: application/json' \
-  -d '{"customer_id":"C001","message":"My headphones from ORD-1001 stopped working"}'
+curl -X POST localhost:8000/chat -H "$ALICE" -H "$JSON" \
+  -d '{"message":"My headphones from ORD-1001 stopped working"}'
 
-# 4. Large refund -> awaiting_approval, then a manager decides
-curl -X POST localhost:8000/chat -H 'content-type: application/json' \
-  -d '{"customer_id":"C001","message":"I want a full refund for ORD-1001, the headphones are defective"}'
-curl localhost:8000/approvals
-curl -X POST localhost:8000/approvals/<thread_id> -H 'content-type: application/json' \
+# 4. Large refund -> awaiting_approval, then a reviewer decides
+curl -X POST localhost:8000/chat -H "$ALICE" -H "$JSON" \
+  -d '{"message":"I want a full refund for ORD-1001, the headphones are defective"}'
+curl localhost:8000/approvals -H "$REVIEWER"
+curl -X POST localhost:8000/approvals/<thread_id> -H "$REVIEWER" -H "$JSON" \
   -d '{"approve":true,"note":"verified defect"}'
 
 # 5. Order changes: cancel an unshipped order (instant + refund), change an address,
 #    cancel a shipped order (goes to /approvals like a large refund)
-curl -X POST localhost:8000/chat -H 'content-type: application/json' \
-  -d '{"customer_id":"C003","message":"Please ship ORD-3001 to 42 Elm St, Austin TX 78701"}'
-curl -X POST localhost:8000/chat -H 'content-type: application/json' \
-  -d '{"customer_id":"C003","message":"Actually, cancel ORD-3001"}'
-curl -X POST localhost:8000/chat -H 'content-type: application/json' \
-  -d '{"customer_id":"C001","message":"Cancel ORD-1002 please"}'
+curl -X POST localhost:8000/chat -H "$CARLA" -H "$JSON" \
+  -d '{"message":"Please ship ORD-3001 to 42 Elm St, Austin TX 78701"}'
+curl -X POST localhost:8000/chat -H "$CARLA" -H "$JSON" -d '{"message":"Actually, cancel ORD-3001"}'
+curl -X POST localhost:8000/chat -H "$ALICE" -H "$JSON" -d '{"message":"Cancel ORD-1002 please"}'
 
-# 6. Failure handling: make the external API return 503, then retry a refund / order lookup
-curl -X POST localhost:8000/mock/_chaos -H 'content-type: application/json' -d '{"fail":true}'
+# 6. Auth: a customer can't approve, and can't impersonate another customer
+curl localhost:8000/approvals -H "$ALICE"                                              # 403
+curl -X POST localhost:8000/chat -H "$ALICE" -H "$JSON" -d '{"customer_id":"C002","message":"hi"}'  # 403
+
+# 7. Failure handling: make the external API return 503, then retry a refund / order lookup
+curl -X POST localhost:8000/mock/_chaos -H "$JSON" -d '{"fail":true}'
 ```
 
 Reuse the returned `thread_id` in `/chat` to continue a conversation.
@@ -134,19 +162,22 @@ pytest
 The LLM is replaced by a scripted fake model and the external API by a fake transport, so tests need no
 network or API key. They cover tool scoping, refund validation, client retries, RAG, the full graph
 (auto-approved refund, approve, reject, planner garbage output, provider outage, LLM rate-limit exhaustion),
-and order changes (eligibility rules, instant cancel + refund, approval-gated cancel, rejection,
-cancel succeeded but refund failed, address change, missing order number).
+order changes (eligibility rules, instant cancel + refund, approval-gated cancel, rejection,
+cancel succeeded but refund failed, address change, missing order number), and auth (401/403 per role,
+impersonation, ticket isolation, `decided_by`, key hashing/revocation, old-schema column upgrade).
 
 ## Limitations
 This is a reference/portfolio build, not a production system.
-- **No authentication or authorization.** Anyone who can reach the API can chat as any customer and
-  approve or reject refunds. A real deployment needs customer auth and reviewer login with roles.
+- **Simple API-key auth.** Keys identify a customer or a reviewer, but there is no user login, key
+  expiry/rotation, OAuth/SSO, or per-key rate limiting, and the demo keys are public (disable with
+  `SEED_DEMO_KEYS=false`). Run it behind HTTPS: keys are bearer secrets. The `/mock` service is unauthenticated.
 - **Mock backends.** The "external" order/shipping/payment API is a local mock, customers and orders are
   seeded demo data in SQLite, and the knowledge base is four short markdown files.
 - **LLM behaviour is not systematically evaluated.** Tests use a scripted fake model, so they verify the
   graph, approval flow and error handling, not how well a real model classifies or plans. Manual runs showed
   the planner can misjudge a case (for example escalating a large refund itself), which prompt rules reduce but
-  do not eliminate. Only refunds are approval-gated; the model never moves money directly.
+  do not eliminate. Large refunds and shipped-order cancellations are approval-gated; the model never moves
+  money directly.
 - **Single process, local storage.** SQLite and an in-memory vector index suit a demo, not concurrent
   multi-instance deployment. There is no queue, rate limiting of API callers, or observability stack.
 - **Free-tier constraints.** Groq's free tier is rate limited and its available models change; calls are

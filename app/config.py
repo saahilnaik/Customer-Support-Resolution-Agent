@@ -20,6 +20,11 @@ class Settings(BaseSettings):
 
     refund_approval_threshold: float = 50.0
 
+    # Well-known demo API keys (demo-key-alice/-bob/-carla/-reviewer). Turn OFF anywhere
+    # real: anyone reading the README could use them. Create real keys with
+    # `python -m app.auth create-key ...`.
+    seed_demo_keys: bool = True
+
     embedding_backend: str = "fastembed"  # fastembed | tfidf
     embedding_model: str = "BAAI/bge-small-en-v1.5"
     kb_dir: str = "data/kb"

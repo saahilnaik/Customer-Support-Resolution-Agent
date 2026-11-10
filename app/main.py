@@ -26,6 +26,8 @@ async def lifespan(app: FastAPI):
     )
     init_db()
     seed()
+    if s.seed_demo_keys:
+        log.warning("SEED_DEMO_KEYS is on: public demo API keys are active (demo only)")
     app.state.rag_backend = get_retriever().backend
     # checkpointer persists paused (awaiting-approval) runs across restarts
     os.makedirs(os.path.dirname(s.checkpoint_db) or ".", exist_ok=True)

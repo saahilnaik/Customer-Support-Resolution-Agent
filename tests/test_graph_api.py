@@ -8,9 +8,14 @@ from langchain_core.messages import AIMessage
 from app.main import app
 
 
+CUSTOMER_KEYS = {"C001": "demo-key-alice", "C002": "demo-key-bob", "C003": "demo-key-carla"}
+
+
 @pytest.fixture
 def client():
-    with TestClient(app, raise_server_exceptions=False) as c:
+    # default identity is the reviewer (approvals, tickets); chat() sends a customer key
+    with TestClient(app, raise_server_exceptions=False,
+                    headers={"X-API-Key": "demo-key-reviewer"}) as c:
         yield c
 
 
@@ -26,7 +31,7 @@ def chat(client, message, customer="C001", thread_id=None):
     body = {"customer_id": customer, "message": message}
     if thread_id:
         body["thread_id"] = thread_id
-    return client.post("/chat", json=body)
+    return client.post("/chat", json=body, headers={"X-API-Key": CUSTOMER_KEYS[customer]})
 
 
 def test_policy_question_uses_rag(client, script_llm):
@@ -193,8 +198,7 @@ def test_llm_outage_after_retries_escalates(client, script_llm, monkeypatch):
     assert body["ticket_id"] and "human agent" in body["reply"]
 
 
-def test_unknown_customer_and_thread_ownership(client, script_llm):
-    assert chat(client, "hi", customer="NOPE").status_code == 404
+def test_thread_ownership(client, script_llm):
     script_llm(classify("other"), "Hello!")
     tid = chat(client, "hi").json()["thread_id"]
     assert chat(client, "hi", customer="C002", thread_id=tid).status_code == 403
