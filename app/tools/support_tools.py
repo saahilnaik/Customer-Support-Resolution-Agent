@@ -69,17 +69,106 @@ def process_refund(customer_id: str, order_id: str, amount: float, reason: str) 
         o = s.get(Order, order_id)
         if not o or o.customer_id != customer_id:
             return {"error": f"order {order_id} not found for this customer"}
-        already = sum(r.amount for r in s.query(Refund).filter(Refund.order_id == order_id))
+        prior = s.query(Refund).filter(Refund.order_id == order_id).all()
+        already = sum(r.amount for r in prior)
         if amount + already > o.total + 1e-9:
             return {"error": f"refund exceeds order total ({o.total}); already refunded {already}"}
+        # Nth refund on this order -> its own key; HTTP retries of this call reuse it.
+        key = f"refund-{order_id}-{len(prior) + 1}"
     try:
-        ext = get_client().create_refund(order_id, amount, reason)
+        ext = get_client().create_refund(order_id, amount, reason, idempotency_key=key)
     except ExternalAPIError as e:
         return {"error": f"payment provider unavailable: {e}"}
     with session_scope() as s:
         s.add(Refund(order_id=order_id, amount=amount, reason=reason,
                      external_ref=ext.get("refund_ref")))
     return {"refund_ref": ext.get("refund_ref"), "amount": amount, "order_id": order_id}
+
+
+# ---- order changes (cancel / shipping address) ----
+
+ORDER_CHANGE_ACTIONS = {"cancel_order", "change_address"}
+
+
+def check_order_change(customer_id: str, order_id: str, action: str) -> dict:
+    """Deterministic eligibility policy for order changes (the LLM never decides this).
+
+    Returns {"allowed", "requires_approval", "reason", "status", "total"}; "reason"
+    is customer-facing when not allowed and reviewer-facing when approval is needed.
+    """
+    deny = {"allowed": False, "requires_approval": False}
+    if action not in ORDER_CHANGE_ACTIONS:
+        return {**deny, "reason": f"unsupported order change {action!r}"}
+    with session_scope() as s:
+        o = s.get(Order, order_id)
+        if not o or o.customer_id != customer_id:
+            return {**deny, "reason": f"I couldn't find order {order_id} on your account."}
+        status, total = o.status, o.total
+    base = {"status": status, "total": total}
+
+    if status == "cancelled":
+        return {**deny, **base, "reason": f"Order {order_id} is already cancelled."}
+    if action == "cancel_order":
+        if status == "processing":
+            return {"allowed": True, "requires_approval": False, "reason": "", **base}
+        if status == "shipped":
+            return {"allowed": True, "requires_approval": True, **base,
+                    "reason": f"Order {order_id} has already shipped; cancelling needs a "
+                              f"carrier intercept and a ${total:.2f} refund."}
+        return {**deny, **base,
+                "reason": f"Order {order_id} has already been delivered, so it can't be "
+                          "cancelled. You can return it within 30 days for a refund instead."}
+    # change_address
+    if status == "processing":
+        return {"allowed": True, "requires_approval": False, "reason": "", **base}
+    progress = "been delivered" if status == "delivered" else "shipped"
+    return {**deny, **base,
+            "reason": f"Order {order_id} has already {progress}, so its address can no longer "
+                      "be changed. Please contact the carrier using the tracking number in "
+                      "your shipping email."}
+
+
+def cancel_order(customer_id: str, order_id: str, reason: str) -> dict:
+    """Cancel via the logistics API, mark the order cancelled, refund what was paid.
+
+    Eligibility is re-checked here because the order may have changed while the
+    request waited for a manager's approval.
+    """
+    check = check_order_change(customer_id, order_id, "cancel_order")
+    if not check["allowed"]:
+        return {"error": check["reason"]}
+    try:
+        ext = get_client().cancel_order(order_id, reason)
+    except ExternalAPIError as e:
+        return {"error": f"logistics provider could not cancel the order: {e}"}
+    with session_scope() as s:
+        o = s.get(Order, order_id)
+        o.status = "cancelled"
+        already = sum(r.amount for r in s.query(Refund).filter(Refund.order_id == order_id))
+        remaining = round(o.total - already, 2)
+    result = {"cancelled": True, "order_id": order_id, "cancel_ref": ext.get("cancel_ref"),
+              "refund_amount": 0.0, "refund_ref": None}
+    if remaining > 0:
+        refund = process_refund(customer_id, order_id, remaining, f"order cancelled: {reason}")
+        if "error" in refund:
+            # the order IS cancelled; the caller must escalate the missing refund
+            return {**result, "refund_error": refund["error"]}
+        result.update(refund_amount=remaining, refund_ref=refund["refund_ref"])
+    return result
+
+
+def change_shipping_address(customer_id: str, order_id: str, address: str) -> dict:
+    address = (address or "").strip()
+    if not address:
+        return {"error": "a new shipping address is required"}
+    check = check_order_change(customer_id, order_id, "change_address")
+    if not check["allowed"]:
+        return {"error": check["reason"]}
+    try:
+        get_client().update_address(order_id, address)
+    except ExternalAPIError as e:
+        return {"error": f"logistics provider could not update the address: {e}"}
+    return {"order_id": order_id, "address": address}
 
 
 # ---- LLM-facing tools ----

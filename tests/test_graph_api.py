@@ -97,6 +97,73 @@ def test_large_refund_rejected_escalates(client, script_llm, external):
     assert t["status"] == "escalated" and "outside policy" in t["description"]
 
 
+def change(action, order_id=None, new_address=None, message=None) -> str:
+    return j(action=action, order_id=order_id, new_address=new_address, message=message)
+
+
+def test_cancel_processing_order_auto_completes_with_refund(client, script_llm, external):
+    script_llm(classify("order_change", "ORD-3001"), change("cancel_order", "ORD-3001"))
+    body = chat(client, "Please cancel ORD-3001", customer="C003").json()
+    assert body["status"] == "completed" and body["intent"] == "order_change"
+    assert "cancelled" in body["reply"] and "RF-TEST" in body["reply"]
+    assert external["cancels"] == ["ORD-3001"]
+    assert external["refunds"][0]["amount"] == 249.0
+
+
+def test_cancel_shipped_order_needs_approval(client, script_llm, external):
+    script_llm(classify("order_change", "ORD-1002"), change("cancel_order", "ORD-1002"))
+    body = chat(client, "Cancel ORD-1002").json()
+    assert body["status"] == "awaiting_approval"
+    assert "shipped" in body["pending_approval"]["message"]
+    assert external["cancels"] == []  # nothing happens before a human decides
+
+    done = client.post(f"/approvals/{body['thread_id']}", json={"approve": True}).json()
+    assert done["status"] == "completed" and "cancelled" in done["reply"]
+    assert external["cancels"] == ["ORD-1002"]
+
+
+def test_rejected_cancellation_opens_escalated_ticket(client, script_llm, external):
+    script_llm(classify("order_change", "ORD-1002"), change("cancel_order", "ORD-1002"))
+    tid = chat(client, "Cancel ORD-1002").json()["thread_id"]
+    done = client.post(f"/approvals/{tid}", json={"approve": False, "note": "already out"}).json()
+    assert "couldn't approve" in done["reply"]
+    assert external["cancels"] == []
+    t = client.get(f"/tickets/{done['ticket_id']}").json()
+    assert t["status"] == "escalated" and t["category"] == "cancel_order_denied"
+
+
+def test_cancel_delivered_order_is_refused_without_side_effects(client, script_llm, external):
+    script_llm(classify("order_change", "ORD-1001"), change("cancel_order", "ORD-1001"))
+    body = chat(client, "Cancel ORD-1001").json()
+    assert body["status"] == "completed" and "delivered" in body["reply"]
+    assert body["ticket_id"] is None
+    assert external["cancels"] == [] and external["refunds"] == []
+
+
+def test_cancel_succeeds_but_refund_fails_escalates(client, script_llm, external):
+    external["fail_refunds"] = True
+    script_llm(classify("order_change", "ORD-3001"), change("cancel_order", "ORD-3001"))
+    body = chat(client, "Cancel ORD-3001", customer="C003").json()
+    assert "has been cancelled" in body["reply"] and f"#{body['ticket_id']}" in body["reply"]
+    t = client.get(f"/tickets/{body['ticket_id']}").json()
+    assert t["category"] == "refund_failed" and t["status"] == "escalated"
+
+
+def test_change_address_on_processing_order(client, script_llm, external):
+    script_llm(classify("order_change", "ORD-3001"),
+               change("change_address", "ORD-3001", "12 New St, Springfield"))
+    body = chat(client, "Ship ORD-3001 to 12 New St, Springfield", customer="C003").json()
+    assert body["status"] == "completed" and "12 New St" in body["reply"]
+    assert external["addresses"] == [{"order_id": "ORD-3001", "address": "12 New St, Springfield"}]
+
+
+def test_order_change_without_order_id_asks_which_order(client, script_llm, external):
+    script_llm(classify("order_change"), change("cancel_order"))
+    body = chat(client, "Cancel my order").json()
+    assert body["status"] == "completed" and "which order" in body["reply"].lower()
+    assert external["cancels"] == []
+
+
 def test_unparseable_llm_output_escalates_instead_of_500(client, script_llm):
     script_llm("not json at all")
     r = chat(client, "hi")
@@ -143,3 +210,18 @@ def test_mock_service_chaos_and_idempotent_refund(client):
     client.post("/mock/_chaos", json={"fail": True})
     assert client.get("/mock/orders/ORD-1001/shipping").status_code == 503
     client.post("/mock/_chaos", json={"fail": False})
+
+
+def test_mock_service_order_changes(client):
+    # delivered parcels can't be cancelled or re-addressed; in-transit ones are intercepted
+    assert client.post("/mock/orders/ORD-2001/cancel", json={}).status_code == 409
+    assert client.put("/mock/orders/ORD-2001/address", json={"address": "x"}).status_code == 409
+    assert client.put("/mock/orders/ORD-3001/address", json={"address": "1 A St"}).status_code == 200
+    a = client.post("/mock/orders/ORD-3001/cancel", json={}).json()
+    assert a["intercepted"] is False
+    b = client.post("/mock/orders/ORD-3001/cancel", json={}).json()
+    assert a == b  # idempotent
+    ship = client.get("/mock/orders/ORD-3001/shipping").json()
+    assert ship["status"] == "cancelled" and ship["address"] == "1 A St"
+    # a cancelled shipment's address is locked
+    assert client.put("/mock/orders/ORD-3001/address", json={"address": "x"}).status_code == 409

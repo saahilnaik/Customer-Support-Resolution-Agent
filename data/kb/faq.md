@@ -4,7 +4,7 @@
 Ask to speak to a human and the conversation will be escalated to our support team, who respond within 1 business day.
 
 ## How do I change my shipping address?
-The address can be changed only while the order is in processing status. After shipping, contact the carrier.
+Ask in the chat with your order number and the full new address. The address can be changed only while the order is in processing status. After shipping, contact the carrier using your tracking number.
 
 ## What payment methods do you accept?
 We accept major credit cards, PayPal and store credit.

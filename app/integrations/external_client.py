@@ -73,12 +73,26 @@ class ExternalClient:
     def get_shipping(self, order_id: str) -> dict:
         return self._request("GET", f"orders/{order_id}/shipping")
 
-    def create_refund(self, order_id: str, amount: float, reason: str) -> dict:
+    def create_refund(self, order_id: str, amount: float, reason: str,
+                      idempotency_key: str | None = None) -> dict:
+        # One key per logical refund: tenacity retries reuse it (safe to retry),
+        # while a later, separate refund on the same order must pass a new key.
         return self._request(
             "POST", "refunds",
             json={"order_id": order_id, "amount": amount, "reason": reason},
-            headers={"Idempotency-Key": f"refund-{order_id}"},  # safe to retry
+            headers={"Idempotency-Key": idempotency_key or f"refund-{order_id}"},
         )
+
+    def cancel_order(self, order_id: str, reason: str) -> dict:
+        return self._request(
+            "POST", f"orders/{order_id}/cancel",
+            json={"reason": reason},
+            headers={"Idempotency-Key": f"cancel-{order_id}"},
+        )
+
+    def update_address(self, order_id: str, address: str) -> dict:
+        # PUT is idempotent by nature: retrying sets the same address.
+        return self._request("PUT", f"orders/{order_id}/address", json={"address": address})
 
 
 _client: ExternalClient | None = None

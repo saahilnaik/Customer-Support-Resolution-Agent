@@ -5,11 +5,12 @@ A multi-agent customer-support system built with **LangGraph + FastAPI**, free t
 
 | Capability | Where |
 |---|---|
-| Multi-agent workflow | `app/graph/builder.py`: supervisor routes to knowledge / account / resolution agents |
+| Multi-agent workflow | `app/graph/builder.py`: supervisor routes to knowledge / account / resolution / order-change agents |
+| Order changes | `order_change` agent cancels orders or changes the shipping address; eligibility is a deterministic policy check, and cancelling a shipped order needs a manager |
 | Tool calling | `app/tools/support_tools.py`, loop in `app/graph/common.py:run_tool_loop` (customer-scoped tools) |
 | API integration | `app/integrations/external_client.py` (httpx + retries + idempotency key) against a mock service at `/mock` |
 | RAG | `app/rag/retriever.py`: local fastembed embeddings (TF-IDF fallback) over `data/kb/*.md`, cited answers, "I don't know" on low confidence |
-| Human-in-the-loop | refunds over `$50` call `interrupt()` in `approval_gate`; state is checkpointed in SQLite; resume via `POST /approvals/{thread_id}` |
+| Human-in-the-loop | refunds over `$50` and cancellations of shipped orders call `interrupt()` in `approval_gate`; state is checkpointed in SQLite; resume via `POST /approvals/{thread_id}` |
 | Error handling | LLM retry/backoff, external API retry, `safe_node` fallback to escalation, graceful degradation, structured errors from tools, global 500 handler |
 
 ## Graph
@@ -19,12 +20,20 @@ START -> supervisor --policy_question--> knowledge -> END
                     --account_query----> account ---------------> END
                     --refund_request--> account -> resolution_plan -> approval_gate -> execute -> END
                     --complaint--------> resolution_plan ------------^ (interrupt if refund > threshold)
+                    --order_change-----> order_change ---------------^ (interrupt if order already shipped)
                     --other------------> general -> END
 (any node failure -> escalation proposal -> execute -> ticket for a human)
 ```
 
-The LLM only *proposes* an action (`resolution_plan`); `execute` performs it deterministically after
-the approval gate, so side effects never run on an unapproved or replayed step.
+The LLM only *proposes* an action (`resolution_plan`, `order_change`); `execute` performs it
+deterministically after the approval gate, so side effects never run on an unapproved or replayed step.
+For order changes the model only extracts what the customer wants; whether it is allowed is decided in code:
+
+| Order status | Cancel | Change address |
+|---|---|---|
+| processing | immediately, full refund | yes |
+| shipped | manager approval (carrier intercept), then full refund | no, contact carrier |
+| delivered | no, return instead | no |
 
 ## Run
 
@@ -102,7 +111,16 @@ curl localhost:8000/approvals
 curl -X POST localhost:8000/approvals/<thread_id> -H 'content-type: application/json' \
   -d '{"approve":true,"note":"verified defect"}'
 
-# 5. Failure handling: make the external API return 503, then retry a refund / order lookup
+# 5. Order changes: cancel an unshipped order (instant + refund), change an address,
+#    cancel a shipped order (goes to /approvals like a large refund)
+curl -X POST localhost:8000/chat -H 'content-type: application/json' \
+  -d '{"customer_id":"C003","message":"Please ship ORD-3001 to 42 Elm St, Austin TX 78701"}'
+curl -X POST localhost:8000/chat -H 'content-type: application/json' \
+  -d '{"customer_id":"C003","message":"Actually, cancel ORD-3001"}'
+curl -X POST localhost:8000/chat -H 'content-type: application/json' \
+  -d '{"customer_id":"C001","message":"Cancel ORD-1002 please"}'
+
+# 6. Failure handling: make the external API return 503, then retry a refund / order lookup
 curl -X POST localhost:8000/mock/_chaos -H 'content-type: application/json' -d '{"fail":true}'
 ```
 
@@ -115,7 +133,9 @@ pytest
 ```
 The LLM is replaced by a scripted fake model and the external API by a fake transport, so tests need no
 network or API key. They cover tool scoping, refund validation, client retries, RAG, the full graph
-(auto-approved refund, approve, reject, planner garbage output, provider outage, LLM rate-limit exhaustion).
+(auto-approved refund, approve, reject, planner garbage output, provider outage, LLM rate-limit exhaustion),
+and order changes (eligibility rules, instant cancel + refund, approval-gated cancel, rejection,
+cancel succeeded but refund failed, address change, missing order number).
 
 ## Limitations
 This is a reference/portfolio build, not a production system.
@@ -135,7 +155,8 @@ This is a reference/portfolio build, not a production system.
   not emailed.
 
 ## Notes
-- Windows with Application Control may block SQLAlchemy's compiled extensions; deleting the
-  `*.pyd` files under `site-packages/sqlalchemy` makes it use the pure-Python fallback.
+- Windows with Application Control may block compiled extensions. For SQLAlchemy, deleting the
+  `*.pyd` files under `site-packages/sqlalchemy` makes it use the pure-Python fallback; for `ormsgpack`
+  (used by LangGraph's checkpointer), install a version that isn't blocked (e.g. `pip install ormsgpack==1.13.0`).
 - Model and thresholds are config (`.env`): `GROQ_MODEL`, `REFUND_APPROVAL_THRESHOLD`, `EMBEDDING_BACKEND`.
 - Free-tier rate limits are the main constraint; a typical turn uses 2-4 LLM calls.

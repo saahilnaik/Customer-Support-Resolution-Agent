@@ -13,17 +13,21 @@ from app.tools import support_tools as tools
 
 log = logging.getLogger(__name__)
 
-INTENTS = {"policy_question", "account_query", "complaint", "refund_request", "other"}
+INTENTS = {"policy_question", "account_query", "complaint", "refund_request", "order_change",
+           "other"}
 
 SUPERVISOR_PROMPT = """You are the triage supervisor of a customer support system.
 Classify the customer's latest message. Reply with ONLY a JSON object:
-{"intent": one of ["policy_question","account_query","complaint","refund_request","other"],
+{"intent": one of ["policy_question","account_query","complaint","refund_request",
+                   "order_change","other"],
  "priority": one of ["low","medium","high"],
  "order_id": order number mentioned such as "ORD-1001" or null}
 - policy_question: general questions about policies, shipping, warranty, how things work
 - account_query: questions about the customer's own orders/profile/delivery status
 - complaint: reporting a problem, defect, bad experience, or asking to speak to a human
-- refund_request: explicitly asking for money back / refund
+- refund_request: explicitly asking for money back / refund on a received order
+- order_change: asking to cancel one of their orders or change its shipping address
+  (asking HOW cancellation works in general is a policy_question)
 - other: greetings, thanks, anything else
 Use conversation history to resolve references like "that order"."""
 
@@ -142,12 +146,73 @@ def resolution_plan(state):
     return {"proposed_action": plan, "retrieved_docs": policy_docs}
 
 
+ORDER_CHANGE_PROMPT = """You are the order-change agent of a customer support system.
+Extract what the customer wants changed. Reply with ONLY a JSON object:
+{"action": "cancel_order" | "change_address" | "none",
+ "order_id": order number such as "ORD-1001" or null,
+ "new_address": full new shipping address (change_address only) or null,
+ "message": short question to the customer if something is missing or unclear, else null}
+Rules:
+- Only extract; do NOT decide whether the change is allowed, the system checks that.
+- Use conversation history to resolve references like "that order".
+- If the customer wants something other than a cancellation or address change, use "none"
+  and put a short helpful reply in "message"."""
+
+
+def _ask(message: str) -> dict:
+    return {"proposed_action": {"action": "none", "message": message}}
+
+
+@safe_node
+def order_change(state):
+    """LLM extracts the request; eligibility and approval needs are decided in code."""
+    out = llm_mod.invoke_llm(
+        llm_mod.get_llm(), [SystemMessage(content=ORDER_CHANGE_PROMPT), *history(state)]
+    )
+    req = parse_json(out.content)
+    action = req.get("action")
+    if action not in tools.ORDER_CHANGE_ACTIONS | {"none"}:
+        raise ValueError(f"invalid action from order-change agent: {action!r}")
+    if action == "none":
+        return _ask(req.get("message") or "How can I help with your order?")
+
+    order_id = req.get("order_id") or state.get("order_id")
+    if not order_id:
+        return _ask("Sure - which order would you like to change? Please share the order "
+                    "number (for example ORD-1234).")
+    address = (req.get("new_address") or "").strip()
+    if action == "change_address" and not address:
+        return _ask(f"What's the full new shipping address for {order_id}?")
+
+    check = tools.check_order_change(state["customer_id"], order_id, action)
+    if not check["allowed"]:
+        return _ask(check["reason"])
+    plan = {"action": action, "order_id": order_id, "reason": "customer request"}
+    if address:
+        plan["new_address"] = address
+    if check["requires_approval"]:
+        plan.update(requires_approval=True, approval_reason=check["reason"])
+    return {"proposed_action": plan}
+
+
 def needs_approval(plan: dict | None) -> bool:
+    if not plan:
+        return False
+    if plan.get("requires_approval"):  # set deterministically by a specialist node
+        return True
     return (
-        bool(plan)
-        and plan.get("action") == "refund"
+        plan.get("action") == "refund"
         and plan.get("amount", 0) > get_settings().refund_approval_threshold
     )
+
+
+def _approval_message(plan: dict) -> str:
+    if plan.get("action") == "refund":
+        return (
+            f"Refund of ${plan['amount']} on {plan['order_id']} exceeds the "
+            f"${get_settings().refund_approval_threshold:.0f} auto-approval limit."
+        )
+    return plan.get("approval_reason") or f"{plan.get('action')} requires approval."
 
 
 def approval_gate(state):
@@ -161,8 +226,7 @@ def approval_gate(state):
             "type": "approval_required",
             "customer_id": state["customer_id"],
             "action": plan,
-            "message": f"Refund of ${plan['amount']} on {plan['order_id']} exceeds the "
-            f"${get_settings().refund_approval_threshold:.0f} auto-approval limit.",
+            "message": _approval_message(plan),
         }
     )
     approved = bool(decision.get("approved"))
@@ -172,6 +236,31 @@ def approval_gate(state):
     }
 
 
+# action -> (ticket description template over the plan, customer-facing noun)
+_DESCRIBE = {
+    "refund": ("Refund of ${amount} on {order_id}", "refund request"),
+    "cancel_order": ("Cancellation of {order_id}", "cancellation request"),
+    "change_address": ("Address change on {order_id}", "address change request"),
+}
+
+
+def _escalate_failure(cid, plan, category, description, error, reply=None) -> dict:
+    """A deterministic action failed: open an escalated ticket so a human finishes it.
+    `reply` may contain "{ticket}" for the ticket number."""
+    t = tools.create_ticket(
+        cid, category, description, plan.get("order_id"), "high", status="escalated"
+    )
+    reply = reply or (
+        "I wasn't able to complete that automatically, so I've escalated it to our team "
+        "(ticket #{ticket}). You won't need to repeat yourself."
+    )
+    return reply_update(
+        reply.replace("{ticket}", str(t["ticket_id"])),
+        ticket_id=t["ticket_id"],
+        errors=[error],
+    )
+
+
 def execute(state):
     """Deterministically carries out the (possibly human-approved) action."""
     cid = state["customer_id"]
@@ -179,20 +268,49 @@ def execute(state):
     action = plan["action"]
     priority = state.get("priority", "medium")
 
-    if action == "refund" and state.get("approval_status") == "rejected":
+    if state.get("approval_status") == "rejected":
         note = state.get("approval_note") or "not approved by a manager"
+        what, noun = _DESCRIBE.get(action, (action, "request"))
         t = tools.create_ticket(
             cid,
-            "refund_denied",
-            f"Refund of ${plan['amount']} on {plan['order_id']} rejected: {note}",
+            f"{action}_denied",
+            f"{what.format(**plan)} rejected: {note}",
             plan.get("order_id"),
             priority,
             status="escalated",
         )
         return reply_update(
-            f"I'm sorry - a manager reviewed your refund request and couldn't approve it ({note}). "
+            f"I'm sorry - a manager reviewed your {noun} and couldn't approve it ({note}). "
             f"I've opened ticket #{t['ticket_id']} so our team can follow up with you.",
             ticket_id=t["ticket_id"],
+        )
+
+    if action == "cancel_order":
+        res = tools.cancel_order(cid, plan["order_id"], plan.get("reason", "customer request"))
+        if "error" in res:
+            return _escalate_failure(cid, plan, "order_change_failed",
+                                     f"Cancellation failed: {res['error']}", res["error"])
+        if "refund_error" in res:
+            return _escalate_failure(
+                cid, plan, "refund_failed",
+                f"Order cancelled but refund failed: {res['refund_error']}", res["refund_error"],
+                reply=f"Order {res['order_id']} has been cancelled, but I couldn't issue the "
+                "refund automatically, so I've escalated it to our team (ticket #{ticket}). "
+                "You won't need to repeat yourself.",
+            )
+        text = f"Order {res['order_id']} has been cancelled."
+        if res["refund_ref"]:
+            text += (f" A refund of ${res['refund_amount']:.2f} (reference {res['refund_ref']}) "
+                     "will reach your original payment method in 5-7 business days.")
+        return reply_update(text)
+
+    if action == "change_address":
+        res = tools.change_shipping_address(cid, plan["order_id"], plan.get("new_address", ""))
+        if "error" in res:
+            return _escalate_failure(cid, plan, "order_change_failed",
+                                     f"Address change failed: {res['error']}", res["error"])
+        return reply_update(
+            f"Done - order {res['order_id']} will now ship to: {res['address']}."
         )
 
     if action == "refund":
@@ -200,19 +318,11 @@ def execute(state):
             cid, plan["order_id"], plan["amount"], plan.get("reason", "customer request")
         )
         if "error" in res:
-            t = tools.create_ticket(
-                cid,
-                "refund_failed",
-                f"Refund could not be processed: {res['error']}",
-                plan.get("order_id"),
-                "high",
-                status="escalated",
-            )
-            return reply_update(
-                "I wasn't able to process your refund automatically, so I've escalated it to our "
-                f"team (ticket #{t['ticket_id']}). You won't need to repeat yourself.",
-                ticket_id=t["ticket_id"],
-                errors=[res["error"]],
+            return _escalate_failure(
+                cid, plan, "refund_failed", f"Refund could not be processed: {res['error']}",
+                res["error"],
+                reply="I wasn't able to process your refund automatically, so I've escalated it "
+                "to our team (ticket #{ticket}). You won't need to repeat yourself.",
             )
         return reply_update(
             f"Your refund of ${res['amount']:.2f} for order {res['order_id']} has been issued "

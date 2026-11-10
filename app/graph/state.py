@@ -6,12 +6,14 @@ from langgraph.graph.message import add_messages
 class SupportState(TypedDict, total=False):
     messages: Annotated[list, add_messages]
     customer_id: str
-    intent: str  # policy_question | account_query | complaint | refund_request | other
+    intent: str  # policy_question | account_query | complaint | refund_request | order_change | other
     priority: str  # low | medium | high
     order_id: Optional[str]
     retrieved_docs: list[dict]
     account_summary: str
-    proposed_action: Optional[dict]  # {action: refund|complaint|escalate|none, ...}
+    # {action: refund|complaint|escalate|cancel_order|change_address|none, ...,
+    #  requires_approval?: bool, approval_reason?: str}
+    proposed_action: Optional[dict]
     approval_status: Optional[str]  # not_required | approved | rejected
     approval_note: Optional[str]
     ticket_id: Optional[int]

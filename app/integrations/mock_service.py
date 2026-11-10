@@ -1,5 +1,9 @@
 """Mock 'third-party' logistics + payments API, mounted at /mock.
 
+Endpoints: GET orders/{id}/shipping, POST orders/{id}/cancel (idempotent, 409 once
+delivered), PUT orders/{id}/address (409 once the parcel has a carrier), POST refunds
+(idempotent per Idempotency-Key). State is in-memory and resets on restart.
+
 POST /mock/_chaos {"fail": true} makes every call return 503, so you can demo
 retries and graceful degradation.
 """
@@ -37,14 +41,64 @@ def set_chaos(body: Chaos):
     return _state
 
 
-@router.get("/orders/{order_id}/shipping")
-def shipping(order_id: str):
-    _check_chaos()
+_cancelled: dict[str, dict] = {}  # order_id -> cancellation
+_addresses: dict[str, str] = {}  # order_id -> updated shipping address
+
+
+def _shipment(order_id: str) -> dict:
     info = _SHIPPING.get(order_id)
     if not info:
         raise HTTPException(404, "unknown order")
+    return info
+
+
+@router.get("/orders/{order_id}/shipping")
+def shipping(order_id: str):
+    _check_chaos()
+    info = dict(_shipment(order_id))
+    if order_id in _cancelled:
+        info.update(status="cancelled", eta=None)
+    if order_id in _addresses:
+        info["address"] = _addresses[order_id]
     tracking = "1Z" + hashlib.md5(order_id.encode()).hexdigest()[:10].upper()
     return {"order_id": order_id, "tracking_number": tracking, **info}
+
+
+class CancelIn(BaseModel):
+    reason: str = ""
+
+
+@router.post("/orders/{order_id}/cancel")
+def cancel(order_id: str, body: CancelIn):
+    _check_chaos()
+    info = _shipment(order_id)
+    if order_id in _cancelled:  # idempotent
+        return _cancelled[order_id]
+    if info["status"] == "delivered":
+        raise HTTPException(409, "order already delivered")
+    result = {
+        "order_id": order_id,
+        "status": "cancelled",
+        "cancel_ref": "CX-" + hashlib.md5(order_id.encode()).hexdigest()[:8].upper(),
+        # an in-transit parcel has to be intercepted by the carrier
+        "intercepted": info["status"] == "in_transit",
+    }
+    _cancelled[order_id] = result
+    return result
+
+
+class AddressIn(BaseModel):
+    address: str
+
+
+@router.put("/orders/{order_id}/address")
+def update_address(order_id: str, body: AddressIn):
+    _check_chaos()
+    info = _shipment(order_id)
+    if info["status"] != "label_pending" or order_id in _cancelled:
+        raise HTTPException(409, "shipment already in progress; address is locked")
+    _addresses[order_id] = body.address
+    return {"order_id": order_id, "address": body.address}
 
 
 class RefundIn(BaseModel):

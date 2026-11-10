@@ -8,6 +8,8 @@ os.environ["EMBEDDING_BACKEND"] = "tfidf"  # no model download in tests
 os.environ["GROQ_API_KEY"] = "test"
 os.environ["EXTERNAL_BACKOFF"] = "0"
 
+import json  # noqa: E402
+
 import httpx  # noqa: E402
 import pytest  # noqa: E402
 from langchain_core.language_models.chat_models import BaseChatModel  # noqa: E402
@@ -67,18 +69,33 @@ def script_llm(monkeypatch):
 @pytest.fixture
 def external(monkeypatch):
     """Install an ExternalClient backed by a fake transport. Returns a state dict."""
-    state = {"fail": False, "refunds": [], "shipping_calls": 0}
+    state = {"fail": False, "refunds": [], "shipping_calls": 0, "cancels": [], "addresses": [],
+             "idempotency_keys": []}
 
     def handler(request: httpx.Request) -> httpx.Response:
         if state["fail"]:
             return httpx.Response(503, json={"detail": "down"})
-        if request.url.path.endswith("/shipping"):
+        path = request.url.path
+        if "Idempotency-Key" in request.headers:
+            state["idempotency_keys"].append(request.headers["Idempotency-Key"])
+        if path.endswith("/shipping"):
             state["shipping_calls"] += 1
             return httpx.Response(200, json={"status": "in_transit", "carrier": "FedEx"})
-        if request.url.path.endswith("/refunds"):
-            body = __import__("json").loads(request.content)
+        if path.endswith("/refunds"):
+            if state.get("fail_refunds"):
+                return httpx.Response(503, json={"detail": "payments down"})
+            body = json.loads(request.content)
             state["refunds"].append(body)
             return httpx.Response(200, json={"refund_ref": "RF-TEST", **body})
+        if path.endswith("/cancel"):
+            order_id = path.split("/")[-2]
+            state["cancels"].append(order_id)
+            return httpx.Response(200, json={"order_id": order_id, "status": "cancelled",
+                                             "cancel_ref": "CX-TEST"})
+        if path.endswith("/address"):
+            body = json.loads(request.content)
+            state["addresses"].append({"order_id": path.split("/")[-2], **body})
+            return httpx.Response(200, json={"order_id": path.split("/")[-2], **body})
         return httpx.Response(404)
 
     http = httpx.Client(base_url="http://ext/", transport=httpx.MockTransport(handler))

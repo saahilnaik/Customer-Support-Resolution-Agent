@@ -39,6 +39,52 @@ def test_refund_validation(external):
     assert "error" in t.process_refund("C001", "ORD-1001", 50.0, "again")
 
 
+def test_order_change_eligibility_rules():
+    # processing: cancel without approval, address change allowed
+    c = t.check_order_change("C003", "ORD-3001", "cancel_order")
+    assert c["allowed"] and not c["requires_approval"]
+    assert t.check_order_change("C003", "ORD-3001", "change_address")["allowed"]
+    # shipped: cancel needs a manager (carrier intercept), address is locked
+    c = t.check_order_change("C001", "ORD-1002", "cancel_order")
+    assert c["allowed"] and c["requires_approval"]
+    assert not t.check_order_change("C001", "ORD-1002", "change_address")["allowed"]
+    # delivered: neither
+    c = t.check_order_change("C001", "ORD-1001", "cancel_order")
+    assert not c["allowed"] and "return" in c["reason"]
+    # scoping + unknown action
+    assert not t.check_order_change("C002", "ORD-3001", "cancel_order")["allowed"]
+    assert not t.check_order_change("C003", "ORD-3001", "teleport")["allowed"]
+
+
+def test_cancel_order_refunds_remaining_and_is_not_repeatable(external):
+    t.process_refund("C003", "ORD-3001", 49.0, "partial goodwill")
+    res = t.cancel_order("C003", "ORD-3001", "changed my mind")
+    assert res["cancelled"] and res["refund_amount"] == 200.0
+    assert external["cancels"] == ["ORD-3001"]
+    assert external["refunds"][-1]["amount"] == 200.0
+    # each refund on the order gets its own idempotency key (retries of one refund share it)
+    refund_keys = [k for k in external["idempotency_keys"] if k.startswith("refund-")]
+    assert len(set(refund_keys)) == 2
+    assert t.lookup_orders("C003")["orders"][0]["status"] == "cancelled"
+    assert "error" in t.cancel_order("C003", "ORD-3001", "again")
+    assert "error" in t.cancel_order("C001", "ORD-3001", "not mine")
+
+
+def test_cancel_order_leaves_order_untouched_when_api_down(external):
+    external["fail"] = True
+    assert "error" in t.cancel_order("C003", "ORD-3001", "x")
+    assert t.lookup_orders("C003")["orders"][0]["status"] == "processing"
+    assert external["refunds"] == []
+
+
+def test_change_shipping_address(external):
+    ok = t.change_shipping_address("C003", "ORD-3001", "12 New St, Springfield")
+    assert ok["address"] == "12 New St, Springfield"
+    assert external["addresses"][0]["address"] == "12 New St, Springfield"
+    assert "error" in t.change_shipping_address("C001", "ORD-1002", "x")  # shipped
+    assert "error" in t.change_shipping_address("C003", "ORD-3001", "  ")  # blank
+
+
 def test_client_retries_then_succeeds():
     calls = {"n": 0}
 
