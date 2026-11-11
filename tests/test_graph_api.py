@@ -229,3 +229,51 @@ def test_mock_service_order_changes(client):
     assert ship["status"] == "cancelled" and ship["address"] == "1 A St"
     # a cancelled shipment's address is locked
     assert client.put("/mock/orders/ORD-3001/address", json={"address": "x"}).status_code == 409
+
+
+def test_trace_records_node_path_llm_calls_and_tools(client, script_llm, external):
+    tool_call = AIMessage(
+        content="", tool_calls=[{"name": "get_order_status", "args": {"order_id": "ORD-1002"}, "id": "c1"}]
+    )
+    script_llm(classify("account_query", "ORD-1002"), tool_call, "In transit.")
+    tid = chat(client, "Where is order ORD-1002?").json()["thread_id"]
+
+    r = client.get(f"/threads/{tid}/trace")
+    assert r.status_code == 200
+    turns = r.json()["turns"]
+    assert len(turns) == 1
+    t = turns[0]
+    assert [n["node"] for n in t["node_path"]] == ["supervisor", "account"]
+    assert t["llm_calls"] == 3 and t["status"] == "completed" and t["intent"] == "account_query"
+    assert [c["name"] for c in t["tool_calls"]] == ["get_order_status"]
+    assert t["latency_ms"] >= 0 and t["errors"] == []
+
+
+def test_trace_covers_approval_pause_and_resume(client, script_llm, external):
+    plan = j(action="refund", order_id="ORD-1001", amount=129.99, reason="defective")
+    script_llm(classify("refund_request", "ORD-1001"), "facts", plan)
+    tid = chat(client, "Refund ORD-1001").json()["thread_id"]
+    client.post(f"/approvals/{tid}", json={"approve": True})
+    turns = client.get(f"/threads/{tid}/trace").json()["turns"]
+    assert [t["kind"] for t in turns] == ["chat", "approval"]
+    assert turns[0]["status"] == "awaiting_approval"
+    assert turns[0]["node_path"][-1]["node"] == "approval_gate"
+    assert turns[1]["status"] == "completed"
+    assert turns[1]["node_path"][-1]["node"] == "execute"
+
+
+def test_trace_records_node_errors(client, script_llm):
+    script_llm("not json at all")
+    tid = chat(client, "hi").json()["thread_id"]
+    t = client.get(f"/threads/{tid}/trace").json()["turns"][0]
+    assert t["errors"] and "supervisor" in t["errors"][0]
+
+
+def test_trace_access_control(client, script_llm):
+    script_llm(classify("other"), "Hello!")
+    tid = chat(client, "hi", customer="C001").json()["thread_id"]
+    alice, bob = {"X-API-Key": "demo-key-alice"}, {"X-API-Key": "demo-key-bob"}
+    assert client.get(f"/threads/{tid}/trace", headers=alice).status_code == 200
+    assert client.get(f"/threads/{tid}/trace", headers=bob).status_code == 404
+    assert client.get("/threads/nope/trace").status_code == 404
+    assert client.get(f"/threads/{tid}/trace", headers={"X-API-Key": "bad"}).status_code == 401

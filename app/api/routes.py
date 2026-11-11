@@ -7,9 +7,10 @@ from langchain_core.messages import HumanMessage
 from langgraph.types import Command
 from pydantic import BaseModel, Field
 
+from app import trace
 from app.auth import Principal, get_principal, require_customer, require_reviewer
 from app.config import get_settings
-from app.db.models import Approval, Customer, Ticket
+from app.db.models import Approval, Customer, Ticket, TurnTrace
 from app.db.session import session_scope
 
 log = logging.getLogger(__name__)
@@ -105,11 +106,14 @@ def chat(body: ChatIn, request: Request, me: Principal = Depends(require_custome
         if _pending_interrupt(graph, thread_id):
             raise HTTPException(409, "this thread is awaiting a manager's approval")
 
-    graph.invoke(
-        {"messages": [HumanMessage(content=body.message)], "customer_id": cid},
-        _config(thread_id),
-    )
-    return _result(graph, thread_id)
+    with trace.turn(thread_id, "chat", customer_id=cid, actor=me.name) as info:
+        graph.invoke(
+            {"messages": [HumanMessage(content=body.message)], "customer_id": cid},
+            _config(thread_id),
+        )
+        out = _result(graph, thread_id)
+        info.update(status=out.status, intent=out.intent)
+    return out
 
 
 @router.get("/approvals", tags=["approvals"])
@@ -146,7 +150,11 @@ def decide(thread_id: str, body: DecisionIn, request: Request,
     if not _pending_interrupt(graph, thread_id):
         raise HTTPException(409, "thread is not paused")
 
-    graph.invoke(Command(resume={"approved": body.approve, "note": body.note}), _config(thread_id))
+    with trace.turn(thread_id, "approval", customer_id=row.customer_id, actor=me.name) as info:
+        graph.invoke(Command(resume={"approved": body.approve, "note": body.note}),
+                     _config(thread_id))
+        info.update(status="completed",
+                    intent=graph.get_state(_config(thread_id)).values.get("intent"))
 
     with session_scope() as s:
         row = s.get(Approval, row.id)
@@ -193,6 +201,28 @@ def get_ticket(ticket_id: int, me: Principal = Depends(get_principal)):
         if not t or (me.role == "customer" and t.customer_id != me.customer_id):
             raise HTTPException(404, "ticket not found")
         return _ticket_dict(t)
+
+
+@router.get("/threads/{thread_id}/trace", tags=["audit"])
+def thread_trace(thread_id: str, me: Principal = Depends(get_principal)):
+    """Per-turn audit trail of a thread. Reviewers: any thread; customers: their own."""
+    with session_scope() as s:
+        rows = s.query(TurnTrace).filter(TurnTrace.thread_id == thread_id).order_by(TurnTrace.id).all()
+        # 404 (not 403) for other customers' threads: don't reveal that they exist
+        if not rows or (me.role == "customer" and rows[0].customer_id != me.customer_id):
+            raise HTTPException(404, "no trace for this thread")
+        return {
+            "thread_id": thread_id,
+            "turns": [
+                {
+                    "id": r.id, "kind": r.kind, "actor": r.actor, "intent": r.intent,
+                    "status": r.status, "started_at": r.started_at, "latency_ms": r.latency_ms,
+                    "llm_calls": r.llm_calls, "node_path": r.node_path,
+                    "tool_calls": r.tool_calls, "errors": r.errors,
+                }
+                for r in rows
+            ],
+        }
 
 
 @router.get("/health", tags=["meta"])

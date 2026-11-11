@@ -2,11 +2,13 @@ import functools
 import json
 import logging
 import re
+import time
 
 from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
 from langgraph.errors import GraphBubbleUp
 
 from app import llm as llm_mod
+from app import trace
 
 log = logging.getLogger(__name__)
 
@@ -75,10 +77,14 @@ def run_tool_loop(system: str, msgs: list, tools: list, max_steps: int = 5) -> s
             if tool is None:
                 result = {"error": f"unknown tool {call['name']}"}
             else:
+                t0 = time.perf_counter()
                 try:
                     result = tool.invoke(call["args"])
                 except Exception as e:  # tools shouldn't raise, but never trust that
                     result = {"error": f"{type(e).__name__}: {e}"}
+                ok = not (isinstance(result, dict) and result.get("error"))
+                trace.record_tool_call(call["name"], call["args"], ok,
+                                       (time.perf_counter() - t0) * 1000)
             convo.append(
                 ToolMessage(
                     content=json.dumps(result, default=str),

@@ -1,5 +1,6 @@
 from langgraph.graph import END, START, StateGraph
 
+from app import trace
 from app.graph import nodes
 from app.graph.state import SupportState
 
@@ -33,14 +34,14 @@ def route_after_plan(state) -> str:
 
 def build_graph(checkpointer=None):
     g = StateGraph(SupportState)
-    g.add_node("supervisor", nodes.supervisor)
-    g.add_node("knowledge", nodes.knowledge)
-    g.add_node("account", nodes.account)
-    g.add_node("general", nodes.general)
-    g.add_node("resolution_plan", nodes.resolution_plan)
-    g.add_node("order_change", nodes.order_change)
-    g.add_node("approval_gate", nodes.approval_gate)
-    g.add_node("execute", nodes.execute)
+    g.add_node("supervisor", trace.traced_node("supervisor", nodes.supervisor))
+    g.add_node("knowledge", trace.traced_node("knowledge", nodes.knowledge))
+    g.add_node("account", trace.traced_node("account", nodes.account))
+    g.add_node("general", trace.traced_node("general", nodes.general))
+    g.add_node("resolution_plan", trace.traced_node("resolution_plan", nodes.resolution_plan))
+    g.add_node("order_change", trace.traced_node("order_change", nodes.order_change))
+    g.add_node("approval_gate", trace.traced_node("approval_gate", nodes.approval_gate))
+    g.add_node("execute", trace.traced_node("execute", nodes.execute))
 
     g.add_edge(START, "supervisor")
     g.add_conditional_edges(

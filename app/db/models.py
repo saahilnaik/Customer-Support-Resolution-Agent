@@ -65,6 +65,25 @@ class Approval(Base):
     decided_by: Mapped[str | None] = mapped_column(String, nullable=True)  # reviewer name
 
 
+class TurnTrace(Base):
+    """Audit record of one graph invocation (a chat turn or an approval resume)."""
+
+    __tablename__ = "turn_traces"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    thread_id: Mapped[str] = mapped_column(String, index=True)
+    customer_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    kind: Mapped[str] = mapped_column(String)  # chat | approval
+    actor: Mapped[str | None] = mapped_column(String, nullable=True)  # key name of the caller
+    intent: Mapped[str | None] = mapped_column(String, nullable=True)
+    status: Mapped[str | None] = mapped_column(String, nullable=True)  # completed|awaiting_approval|failed
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    latency_ms: Mapped[float] = mapped_column(Float, default=0.0)
+    llm_calls: Mapped[int] = mapped_column(Integer, default=0)
+    node_path: Mapped[list] = mapped_column(JSON, default=list)  # [{node, latency_ms, outcome}]
+    tool_calls: Mapped[list] = mapped_column(JSON, default=list)  # [{name, args, ok, latency_ms}]
+    errors: Mapped[list] = mapped_column(JSON, default=list)
+
+
 class ApiKey(Base):
     """API credential. Only the SHA-256 of the key is stored."""
 

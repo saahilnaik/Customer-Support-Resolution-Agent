@@ -4,6 +4,7 @@ import logging
 from langchain_core.language_models import BaseChatModel
 from tenacity import retry, retry_if_exception, stop_after_attempt, wait_exponential
 
+from app import trace
 from app.config import get_settings
 
 log = logging.getLogger(__name__)
@@ -42,6 +43,7 @@ def invoke_llm(llm, messages):
         reraise=True,
     )
     def _call():
+        trace.record_llm_call()  # counts every attempt, including retries
         return llm.invoke(messages)
 
     return _call()
