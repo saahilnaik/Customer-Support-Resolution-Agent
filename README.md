@@ -182,7 +182,11 @@ nothing is refunded, cancelled or ticketed (it uses throwaway DBs). It reports *
 (supervisor intent) and **planning** accuracy (proposed action, plus order id when the case pins one),
 per intent, with a confusion matrix and every failing case. Cases that crash or hit the error fallback
 count as failures. Exit codes: 0 ok, 1 below a `--min-*` threshold, 2 no API key. Add cases by appending
-lines to `evals/golden.jsonl`.
+lines to `evals/golden.jsonl`. Even at temperature 0 the model is not fully deterministic, so a single case can flip
+between runs; treat differences of a case or two as noise.
+
+The `LLM eval` GitHub Actions workflow (`.github/workflows/llm-eval.yml`) runs it manually or weekly and fails
+below 90% routing / 85% planning. It needs a `GROQ_API_KEY` repository secret.
 
 ## Limitations
 This is a reference/portfolio build, not a production system.
