@@ -166,6 +166,24 @@ order changes (eligibility rules, instant cancel + refund, approval-gated cancel
 cancel succeeded but refund failed, address change, missing order number), and auth (401/403 per role,
 impersonation, ticket isolation, `decided_by`, key hashing/revocation, old-schema column upgrade).
 
+## Evaluating the model
+
+`pytest` checks the code with a fake LLM. To measure the **real** Groq model, run the eval harness
+(needs `GROQ_API_KEY` in `.env`; it calls the network and is not part of `pytest`):
+
+```bash
+python -m evals.run                      # all cases in evals/golden.jsonl
+python -m evals.run --limit 5 --delay 1  # quick smoke run
+python -m evals.run --json evals/last_run.json --min-intent 0.9 --min-action 0.85   # exit 1 if below
+```
+
+It sends each golden message through the real graph and halts before `approval_gate`/`execute`, so
+nothing is refunded, cancelled or ticketed (it uses throwaway DBs). It reports **routing** accuracy
+(supervisor intent) and **planning** accuracy (proposed action, plus order id when the case pins one),
+per intent, with a confusion matrix and every failing case. Cases that crash or hit the error fallback
+count as failures. Exit codes: 0 ok, 1 below a `--min-*` threshold, 2 no API key. Add cases by appending
+lines to `evals/golden.jsonl`.
+
 ## Limitations
 This is a reference/portfolio build, not a production system.
 - **Simple API-key auth.** Keys identify a customer or a reviewer, but there is no user login, key
