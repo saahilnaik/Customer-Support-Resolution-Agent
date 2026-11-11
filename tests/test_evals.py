@@ -63,3 +63,46 @@ def test_aggregate_all_errored_is_zero():
     agg = aggregate([case()], [result(errored=True, error="x")])
     assert agg["errors"] == 1 and agg["intent_accuracy"] == 0.0 and agg["action_accuracy"] == 0.0
     assert agg["failures"][0]["error"] == "x"
+
+
+# ---- Task 3: golden dataset + loader ----
+import json  # noqa: E402
+
+import pytest  # noqa: E402
+
+from evals.dataset import GOLDEN_PATH, load_golden, validate_case  # noqa: E402
+
+
+def test_golden_file_is_valid():
+    cases = load_golden()
+    assert len(cases) >= 35
+    assert len({c["id"] for c in cases}) == len(cases)
+    for c in cases:
+        assert validate_case(c) == [], (c["id"], validate_case(c))
+    for intent in ("policy_question", "account_query", "complaint", "refund_request",
+                   "order_change", "other"):
+        assert sum(c["expect_intent"] == intent for c in cases) >= 2, intent
+    for action in ("refund", "complaint", "escalate", "cancel_order", "change_address", "none"):
+        assert sum(c["expect_action"] == action for c in cases) >= 2, action
+    assert GOLDEN_PATH.exists()
+
+
+def test_load_golden_skips_blank_lines(tmp_path):
+    p = tmp_path / "g.jsonl"
+    good = {"id": "a", "customer": "C001", "message": "hi", "expect_intent": "other",
+            "expect_action": None}
+    p.write_text("\n" + json.dumps(good) + "\n\n" + json.dumps({**good, "id": "b"}) + "\n")
+    assert [c["id"] for c in load_golden(p)] == ["a", "b"]
+
+
+def test_load_golden_reports_line_number_on_bad_json(tmp_path):
+    p = tmp_path / "g.jsonl"
+    p.write_text('{"id": "a"}\n{not json}\n')
+    with pytest.raises(ValueError, match=r":2:"):
+        load_golden(p)
+
+
+def test_validate_case_rejects_order_of_another_customer():
+    c = {"id": "x", "customer": "C002", "message": "m", "expect_intent": "order_change",
+         "expect_action": "cancel_order", "expect_order_id": "ORD-3001"}
+    assert any("ORD-3001" in p for p in validate_case(c))

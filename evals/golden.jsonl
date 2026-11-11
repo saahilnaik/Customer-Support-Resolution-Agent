@@ -1,0 +1,42 @@
+{"id": "pol-returns", "customer": "C001", "message": "What is your return policy?", "expect_intent": "policy_question", "expect_action": null}
+{"id": "pol-shipping-time", "customer": "C002", "message": "How long does standard shipping take?", "expect_intent": "policy_question", "expect_action": null}
+{"id": "pol-warranty", "customer": "C003", "message": "How long is the warranty on electronics?", "expect_intent": "policy_question", "expect_action": null}
+{"id": "pol-how-cancel", "customer": "C001", "message": "How do I cancel an order?", "expect_intent": "policy_question", "expect_action": null}
+{"id": "pol-address-after-ship", "customer": "C002", "message": "Can I change my shipping address after the order has shipped?", "expect_intent": "policy_question", "expect_action": null}
+{"id": "pol-payment", "customer": "C003", "message": "Which payment methods do you accept?", "expect_intent": "policy_question", "expect_action": null}
+{"id": "pol-unknown", "customer": "C001", "message": "Do you ship to the moon?", "expect_intent": "policy_question", "expect_action": null}
+{"id": "pol-approval", "customer": "C002", "message": "Do large refunds need manager approval?", "expect_intent": "policy_question", "expect_action": null}
+{"id": "acc-status-1002", "customer": "C001", "message": "Where is my order ORD-1002?", "expect_intent": "account_query", "expect_action": null}
+{"id": "acc-list-orders", "customer": "C002", "message": "Can you list my recent orders?", "expect_intent": "account_query", "expect_action": null}
+{"id": "acc-tier", "customer": "C001", "message": "What membership tier am I on?", "expect_intent": "account_query", "expect_action": null}
+{"id": "acc-status-3001", "customer": "C003", "message": "Has ORD-3001 shipped yet?", "expect_intent": "account_query", "expect_action": null}
+{"id": "acc-total-2002", "customer": "C002", "message": "How much did I pay for order ORD-2002?", "expect_intent": "account_query", "expect_action": null}
+{"id": "acc-delivered", "customer": "C001", "message": "Was ORD-1001 delivered?", "expect_intent": "account_query", "expect_action": null}
+{"id": "ref-damaged-1001", "customer": "C001", "message": "I want a full refund for order ORD-1001, the headphones arrived damaged.", "expect_intent": "refund_request", "expect_action": "refund", "expect_order_id": "ORD-1001"}
+{"id": "ref-unused-2002", "customer": "C002", "message": "Please refund ORD-2002, I don't want the phone case.", "expect_intent": "refund_request", "expect_action": "refund", "expect_order_id": "ORD-2002"}
+{"id": "ref-wrong-item-2002", "customer": "C002", "message": "ORD-2002 was the wrong item. I'd like my money back.", "expect_intent": "refund_request", "expect_action": "refund", "expect_order_id": "ORD-2002"}
+{"id": "ref-no-order", "customer": "C001", "message": "I want my money back.", "expect_intent": "refund_request", "expect_action": "none"}
+{"id": "ref-history-ref", "customer": "C001", "message": "Yes, please refund that one.", "expect_intent": "refund_request", "expect_action": "refund", "expect_order_id": "ORD-1001", "history": [{"role": "user", "content": "My headphones from ORD-1001 arrived with a cracked band."}, {"role": "assistant", "content": "I'm sorry about that. Would you like a refund?"}]}
+{"id": "ref-cracked-2002", "customer": "C002", "message": "The phone case from ORD-2002 arrived cracked. Refund please.", "expect_intent": "refund_request", "expect_action": "refund", "expect_order_id": "ORD-2002"}
+{"id": "ref-late-2001", "customer": "C002", "message": "I want a refund for ORD-2001, the keyboard keys stopped working.", "expect_intent": "refund_request", "expect_action": "complaint", "expect_order_id": "ORD-2001"}
+{"id": "ref-someone-elses", "customer": "C001", "message": "Refund order ORD-2001 for me.", "expect_intent": "refund_request", "expect_action": "none"}
+{"id": "cmp-defective-1001", "customer": "C001", "message": "My headphones from ORD-1001 are broken, the left side is dead.", "expect_intent": "complaint", "expect_action": "complaint", "expect_order_id": "ORD-1001"}
+{"id": "cmp-late-1002", "customer": "C001", "message": "My order ORD-1002 is way too late, this is unacceptable.", "expect_intent": "complaint", "expect_action": "complaint", "expect_order_id": "ORD-1002"}
+{"id": "cmp-human", "customer": "C002", "message": "I want to talk to a human agent right now.", "expect_intent": "complaint", "expect_action": "escalate"}
+{"id": "cmp-rude-service", "customer": "C003", "message": "The support agent I spoke to yesterday was extremely rude.", "expect_intent": "complaint", "expect_action": "complaint"}
+{"id": "cmp-defective-2001", "customer": "C002", "message": "The keyboard I bought (ORD-2001) has a sticky key, it's defective.", "expect_intent": "complaint", "expect_action": "complaint", "expect_order_id": "ORD-2001"}
+{"id": "cmp-manager", "customer": "C001", "message": "Get me your manager, I'm done with this chat.", "expect_intent": "complaint", "expect_action": "escalate"}
+{"id": "chg-addr-update-3001", "customer": "C003", "message": "Update the delivery address for order ORD-3001: 400 Pine St, Seattle, WA 98101.", "expect_intent": "order_change", "expect_action": "change_address", "expect_order_id": "ORD-3001"}
+{"id": "chg-cancel-3001", "customer": "C003", "message": "Please cancel order ORD-3001.", "expect_intent": "order_change", "expect_action": "cancel_order", "expect_order_id": "ORD-3001"}
+{"id": "chg-addr-3001", "customer": "C003", "message": "Change the shipping address of ORD-3001 to 12 Main St, Springfield, IL 62701.", "expect_intent": "order_change", "expect_action": "change_address", "expect_order_id": "ORD-3001"}
+{"id": "chg-cancel-shipped-1002", "customer": "C001", "message": "I'd like to cancel ORD-1002.", "expect_intent": "order_change", "expect_action": "cancel_order", "expect_order_id": "ORD-1002"}
+{"id": "chg-cancel-delivered-1001", "customer": "C001", "message": "Cancel ORD-1001 please.", "expect_intent": "order_change", "expect_action": "none"}
+{"id": "chg-addr-missing", "customer": "C003", "message": "I need to change the address on ORD-3001.", "expect_intent": "order_change", "expect_action": "none"}
+{"id": "chg-cancel-history", "customer": "C003", "message": "Yes, cancel it.", "expect_intent": "order_change", "expect_action": "cancel_order", "expect_order_id": "ORD-3001", "history": [{"role": "user", "content": "Where is ORD-3001?"}, {"role": "assistant", "content": "ORD-3001 is still processing. Anything else?"}]}
+{"id": "chg-cancel-no-id", "customer": "C003", "message": "I want to cancel my order.", "expect_intent": "order_change", "expect_action": "none"}
+{"id": "chg-addr-shipped-1002", "customer": "C001", "message": "Ship ORD-1002 to 5 Oak Avenue, Portland, OR 97201 instead.", "expect_intent": "order_change", "expect_action": "none"}
+{"id": "chg-addr-no-order", "customer": "C003", "message": "Please ship my order to 99 Elm Road, Austin, TX 73301.", "expect_intent": "order_change", "expect_action": "none"}
+{"id": "oth-greeting", "customer": "C001", "message": "Hi there!", "expect_intent": "other", "expect_action": null}
+{"id": "oth-thanks", "customer": "C002", "message": "Thanks, that's all I needed.", "expect_intent": "other", "expect_action": null}
+{"id": "oth-offtopic", "customer": "C003", "message": "What's the weather like today?", "expect_intent": "other", "expect_action": null}
+{"id": "oth-joke", "customer": "C001", "message": "Tell me a joke.", "expect_intent": "other", "expect_action": null}
