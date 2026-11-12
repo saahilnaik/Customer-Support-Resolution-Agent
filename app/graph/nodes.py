@@ -148,6 +148,14 @@ def resolution_plan(state):
             raise ValueError("refund plan without a valid amount")
         if not plan.get("order_id"):
             raise ValueError("refund plan without order_id")
+        check = tools.check_refund_eligibility(state["customer_id"], plan["order_id"])
+        if not check["allowed"]:  # policy is code: override the planner's refund
+            plan = {
+                "action": "complaint", "order_id": plan["order_id"],
+                "category": "refund_outside_window",
+                "description": f"Refund requested but ineligible: {check['reason']}",
+                "reason": "outside refund window", "message": check["reason"],
+            }
     return {"proposed_action": plan, "retrieved_docs": policy_docs}
 
 

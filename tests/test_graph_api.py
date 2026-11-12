@@ -296,3 +296,16 @@ def test_interrupt_before_halts_before_execute(script_llm):
     assert state.next == ("approval_gate",)
     with session_scope() as s:
         assert s.get(Order, "ORD-3001").status != "cancelled"
+
+
+def test_refund_outside_window_becomes_complaint_even_if_planner_proposes_refund(
+    client, script_llm, external
+):
+    # ORD-2001 was placed 45 days ago: policy is code, so the planner's refund is overridden
+    plan = j(action="refund", order_id="ORD-2001", amount=89.0, reason="keys stopped working")
+    script_llm(classify("refund_request", "ORD-2001"), "ORD-2001 delivered, $89.00.", plan)
+    body = chat(client, "I want a refund for ORD-2001, the keys stopped working", customer="C002").json()
+    assert body["status"] == "completed" and "30-day" in body["reply"]
+    assert external["refunds"] == []
+    t = client.get(f"/tickets/{body['ticket_id']}").json()
+    assert t["category"] == "refund_outside_window" and t["status"] == "open"

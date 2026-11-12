@@ -5,6 +5,7 @@ Read-only tools are bound to one customer via closures, so the LLM cannot
 read another customer's data by passing a different id.
 """
 import logging
+from datetime import datetime, timedelta, timezone
 
 from langchain_core.tools import tool
 
@@ -61,10 +62,41 @@ def create_ticket(customer_id: str, category: str, description: str,
         return {"ticket_id": t.id, "status": t.status, "priority": t.priority}
 
 
-def process_refund(customer_id: str, order_id: str, amount: float, reason: str) -> dict:
-    """Validates, calls the external payments API, records the refund."""
+REFUND_WINDOW_DAYS = 30
+
+
+def check_refund_eligibility(customer_id: str, order_id: str) -> dict:
+    """Deterministic refund-window policy (the LLM never decides this).
+
+    Delivered orders can be refunded within REFUND_WINDOW_DAYS. We have no delivery
+    timestamp, so the order date is the clock. Orders not yet delivered are not blocked,
+    and unknown/foreign orders are left to process_refund's own error.
+    Returns {"allowed", "reason"}; "reason" is customer-facing when not allowed.
+    """
+    with session_scope() as s:
+        o = s.get(Order, order_id)
+        if not o or o.customer_id != customer_id or o.status != "delivered":
+            return {"allowed": True, "reason": ""}
+        placed = o.placed_at if o.placed_at.tzinfo else o.placed_at.replace(tzinfo=timezone.utc)
+    age = datetime.now(timezone.utc) - placed
+    if age > timedelta(days=REFUND_WINDOW_DAYS):
+        return {"allowed": False,
+                "reason": f"Order {order_id} is outside our {REFUND_WINDOW_DAYS}-day refund "
+                          "window. If the item is faulty it may still be covered by the "
+                          "12-month warranty (replacement or repair)."}
+    return {"allowed": True, "reason": ""}
+
+
+def process_refund(customer_id: str, order_id: str, amount: float, reason: str,
+                   enforce_window: bool = True) -> dict:
+    """Validates, calls the external payments API, records the refund.
+    cancel_order passes enforce_window=False: refunding a cancelled order isn't a return."""
     if amount <= 0:
         return {"error": "refund amount must be positive"}
+    if enforce_window:
+        check = check_refund_eligibility(customer_id, order_id)
+        if not check["allowed"]:
+            return {"error": check["reason"]}
     with session_scope() as s:
         o = s.get(Order, order_id)
         if not o or o.customer_id != customer_id:
@@ -149,7 +181,8 @@ def cancel_order(customer_id: str, order_id: str, reason: str) -> dict:
     result = {"cancelled": True, "order_id": order_id, "cancel_ref": ext.get("cancel_ref"),
               "refund_amount": 0.0, "refund_ref": None}
     if remaining > 0:
-        refund = process_refund(customer_id, order_id, remaining, f"order cancelled: {reason}")
+        refund = process_refund(customer_id, order_id, remaining, f"order cancelled: {reason}",
+                                 enforce_window=False)
         if "error" in refund:
             # the order IS cancelled; the caller must escalate the missing refund
             return {**result, "refund_error": refund["error"]}

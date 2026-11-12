@@ -122,3 +122,21 @@ def test_client_gives_up_after_retries_and_does_not_retry_4xx():
     with pytest.raises(ExternalAPIError) as ei:
         c.get_shipping("ORD-1")
     assert ei.value.status_code == 404 and calls["n"] == 1
+
+
+def test_refund_window_check_is_deterministic():
+    # ORD-2001: delivered, placed 45 days ago -> outside the 30-day window
+    late = t.check_refund_eligibility("C002", "ORD-2001")
+    assert late["allowed"] is False and "30-day" in late["reason"]
+    # ORD-1001: delivered 10 days ago -> inside the window
+    assert t.check_refund_eligibility("C001", "ORD-1001")["allowed"] is True
+    # not delivered yet (the window runs from delivery) -> not blocked here
+    assert t.check_refund_eligibility("C003", "ORD-3001")["allowed"] is True
+    # unknown / foreign orders are left to process_refund's own error
+    assert t.check_refund_eligibility("C001", "ORD-2001")["allowed"] is True
+
+
+def test_process_refund_rechecks_window(external):
+    res = t.process_refund("C002", "ORD-2001", 10.0, "keys stopped working")
+    assert "error" in res and "30-day" in res["error"]
+    assert external["refunds"] == []
