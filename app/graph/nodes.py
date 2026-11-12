@@ -28,6 +28,11 @@ Classify the customer's latest message. Reply with ONLY a JSON object:
 - refund_request: explicitly asking for money back / refund on a received order
 - order_change: asking to cancel one of their orders or change its shipping address
   (asking HOW cancellation works in general is a policy_question)
+  Rule: order_change means the customer wants an action done on their own order now
+  ("cancel ORD-1234", "ship my order to ..."). A general question about whether or how
+  something can be done ("How do I cancel an order?", "Can I change my address after it
+  has shipped?", "Is cancelling free?") is a policy_question, even if it mentions
+  cancelling or changing an address.
 - other: greetings, thanks, anything else
 Use conversation history to resolve references like "that order"."""
 
