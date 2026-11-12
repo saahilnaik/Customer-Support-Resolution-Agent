@@ -277,3 +277,22 @@ def test_trace_access_control(client, script_llm):
     assert client.get(f"/threads/{tid}/trace", headers=bob).status_code == 404
     assert client.get("/threads/nope/trace").status_code == 404
     assert client.get(f"/threads/{tid}/trace", headers={"X-API-Key": "bad"}).status_code == 401
+
+
+def test_interrupt_before_halts_before_execute(script_llm):
+    from langgraph.checkpoint.memory import MemorySaver
+
+    from app.db.models import Order
+    from app.db.session import session_scope
+    from app.graph.builder import build_graph
+
+    script_llm(classify("order_change", "ORD-3001"), change("cancel_order", "ORD-3001"))
+    graph = build_graph(MemorySaver(), interrupt_before=["approval_gate", "execute"])
+    cfg = {"configurable": {"thread_id": "t-halt"}}
+    graph.invoke({"messages": [("user", "cancel ORD-3001")], "customer_id": "C003"}, cfg)
+
+    state = graph.get_state(cfg)
+    assert state.values["proposed_action"]["action"] == "cancel_order"
+    assert state.next == ("approval_gate",)
+    with session_scope() as s:
+        assert s.get(Order, "ORD-3001").status != "cancelled"

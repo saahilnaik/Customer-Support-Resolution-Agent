@@ -32,7 +32,7 @@ def route_after_plan(state) -> str:
     return "execute" if _failed(state) else "approval_gate"
 
 
-def build_graph(checkpointer=None):
+def build_graph(checkpointer=None, interrupt_before: list[str] | None = None):
     g = StateGraph(SupportState)
     g.add_node("supervisor", trace.traced_node("supervisor", nodes.supervisor))
     g.add_node("knowledge", trace.traced_node("knowledge", nodes.knowledge))
@@ -56,4 +56,4 @@ def build_graph(checkpointer=None):
     g.add_edge("approval_gate", "execute")
     for n in ("knowledge", "general", "execute"):
         g.add_edge(n, END)
-    return g.compile(checkpointer=checkpointer)
+    return g.compile(checkpointer=checkpointer, interrupt_before=interrupt_before)
