@@ -1,0 +1,538 @@
+{
+  "summary": {
+    "total": 57,
+    "errors": 0,
+    "intent_accuracy": 1.0,
+    "action_accuracy": 0.9649122807017544,
+    "per_intent": {
+      "policy_question": {
+        "n": 12,
+        "intent_accuracy": 1.0,
+        "action_accuracy": 1.0
+      },
+      "account_query": {
+        "n": 8,
+        "intent_accuracy": 1.0,
+        "action_accuracy": 1.0
+      },
+      "refund_request": {
+        "n": 9,
+        "intent_accuracy": 1.0,
+        "action_accuracy": 0.8888888888888888
+      },
+      "complaint": {
+        "n": 10,
+        "intent_accuracy": 1.0,
+        "action_accuracy": 0.9
+      },
+      "order_change": {
+        "n": 12,
+        "intent_accuracy": 1.0,
+        "action_accuracy": 1.0
+      },
+      "other": {
+        "n": 6,
+        "intent_accuracy": 1.0,
+        "action_accuracy": 1.0
+      }
+    },
+    "confusion": {
+      "policy_question": {
+        "policy_question": 12
+      },
+      "account_query": {
+        "account_query": 8
+      },
+      "refund_request": {
+        "refund_request": 9
+      },
+      "complaint": {
+        "complaint": 10
+      },
+      "order_change": {
+        "order_change": 12
+      },
+      "other": {
+        "other": 6
+      }
+    },
+    "failures": [
+      {
+        "id": "ref-damaged-1001",
+        "message": "I want a full refund for order ORD-1001, the headphones arrived damaged.",
+        "expect_intent": "refund_request",
+        "got_intent": "refund_request",
+        "expect_action": "refund",
+        "got_action": "none",
+        "error": null
+      },
+      {
+        "id": "cmp-crushed-box",
+        "message": "The box for ORD-1001 was completely crushed when it arrived.",
+        "expect_intent": "complaint",
+        "got_intent": "complaint",
+        "expect_action": "complaint",
+        "got_action": "refund",
+        "error": null
+      }
+    ]
+  },
+  "results": [
+    {
+      "id": "pol-returns",
+      "intent": "policy_question",
+      "action": null,
+      "order_id": null,
+      "errored": false,
+      "error": null
+    },
+    {
+      "id": "pol-shipping-time",
+      "intent": "policy_question",
+      "action": null,
+      "order_id": null,
+      "errored": false,
+      "error": null
+    },
+    {
+      "id": "pol-warranty",
+      "intent": "policy_question",
+      "action": null,
+      "order_id": null,
+      "errored": false,
+      "error": null
+    },
+    {
+      "id": "pol-how-cancel",
+      "intent": "policy_question",
+      "action": null,
+      "order_id": null,
+      "errored": false,
+      "error": null
+    },
+    {
+      "id": "pol-address-after-ship",
+      "intent": "policy_question",
+      "action": null,
+      "order_id": null,
+      "errored": false,
+      "error": null
+    },
+    {
+      "id": "pol-payment",
+      "intent": "policy_question",
+      "action": null,
+      "order_id": null,
+      "errored": false,
+      "error": null
+    },
+    {
+      "id": "pol-unknown",
+      "intent": "policy_question",
+      "action": null,
+      "order_id": null,
+      "errored": false,
+      "error": null
+    },
+    {
+      "id": "pol-approval",
+      "intent": "policy_question",
+      "action": null,
+      "order_id": null,
+      "errored": false,
+      "error": null
+    },
+    {
+      "id": "acc-status-1002",
+      "intent": "account_query",
+      "action": null,
+      "order_id": null,
+      "errored": false,
+      "error": null
+    },
+    {
+      "id": "acc-list-orders",
+      "intent": "account_query",
+      "action": null,
+      "order_id": null,
+      "errored": false,
+      "error": null
+    },
+    {
+      "id": "acc-tier",
+      "intent": "account_query",
+      "action": null,
+      "order_id": null,
+      "errored": false,
+      "error": null
+    },
+    {
+      "id": "acc-status-3001",
+      "intent": "account_query",
+      "action": null,
+      "order_id": null,
+      "errored": false,
+      "error": null
+    },
+    {
+      "id": "acc-total-2002",
+      "intent": "account_query",
+      "action": null,
+      "order_id": null,
+      "errored": false,
+      "error": null
+    },
+    {
+      "id": "acc-delivered",
+      "intent": "account_query",
+      "action": null,
+      "order_id": null,
+      "errored": false,
+      "error": null
+    },
+    {
+      "id": "ref-damaged-1001",
+      "intent": "refund_request",
+      "action": "none",
+      "order_id": "ORD-1001",
+      "errored": false,
+      "error": null
+    },
+    {
+      "id": "ref-unused-2002",
+      "intent": "refund_request",
+      "action": "refund",
+      "order_id": "ORD-2002",
+      "errored": false,
+      "error": null
+    },
+    {
+      "id": "ref-wrong-item-2002",
+      "intent": "refund_request",
+      "action": "refund",
+      "order_id": "ORD-2002",
+      "errored": false,
+      "error": null
+    },
+    {
+      "id": "ref-no-order",
+      "intent": "refund_request",
+      "action": "none",
+      "order_id": null,
+      "errored": false,
+      "error": null
+    },
+    {
+      "id": "ref-history-ref",
+      "intent": "refund_request",
+      "action": "refund",
+      "order_id": "ORD-1001",
+      "errored": false,
+      "error": null
+    },
+    {
+      "id": "ref-cracked-2002",
+      "intent": "refund_request",
+      "action": "refund",
+      "order_id": "ORD-2002",
+      "errored": false,
+      "error": null
+    },
+    {
+      "id": "ref-late-2001",
+      "intent": "refund_request",
+      "action": "complaint",
+      "order_id": "ORD-2001",
+      "errored": false,
+      "error": null
+    },
+    {
+      "id": "ref-someone-elses",
+      "intent": "refund_request",
+      "action": "none",
+      "order_id": null,
+      "errored": false,
+      "error": null
+    },
+    {
+      "id": "cmp-defective-1001",
+      "intent": "complaint",
+      "action": "refund",
+      "order_id": "ORD-1001",
+      "errored": false,
+      "error": null
+    },
+    {
+      "id": "cmp-late-1002",
+      "intent": "complaint",
+      "action": "complaint",
+      "order_id": "ORD-1002",
+      "errored": false,
+      "error": null
+    },
+    {
+      "id": "cmp-human",
+      "intent": "complaint",
+      "action": "escalate",
+      "order_id": null,
+      "errored": false,
+      "error": null
+    },
+    {
+      "id": "cmp-rude-service",
+      "intent": "complaint",
+      "action": "complaint",
+      "order_id": null,
+      "errored": false,
+      "error": null
+    },
+    {
+      "id": "cmp-defective-2001",
+      "intent": "complaint",
+      "action": "complaint",
+      "order_id": "ORD-2001",
+      "errored": false,
+      "error": null
+    },
+    {
+      "id": "cmp-manager",
+      "intent": "complaint",
+      "action": "escalate",
+      "order_id": null,
+      "errored": false,
+      "error": null
+    },
+    {
+      "id": "chg-addr-update-3001",
+      "intent": "order_change",
+      "action": "change_address",
+      "order_id": "ORD-3001",
+      "errored": false,
+      "error": null
+    },
+    {
+      "id": "chg-cancel-3001",
+      "intent": "order_change",
+      "action": "cancel_order",
+      "order_id": "ORD-3001",
+      "errored": false,
+      "error": null
+    },
+    {
+      "id": "chg-addr-3001",
+      "intent": "order_change",
+      "action": "change_address",
+      "order_id": "ORD-3001",
+      "errored": false,
+      "error": null
+    },
+    {
+      "id": "chg-cancel-shipped-1002",
+      "intent": "order_change",
+      "action": "cancel_order",
+      "order_id": "ORD-1002",
+      "errored": false,
+      "error": null
+    },
+    {
+      "id": "chg-cancel-delivered-1001",
+      "intent": "order_change",
+      "action": "none",
+      "order_id": null,
+      "errored": false,
+      "error": null
+    },
+    {
+      "id": "chg-addr-missing",
+      "intent": "order_change",
+      "action": "none",
+      "order_id": null,
+      "errored": false,
+      "error": null
+    },
+    {
+      "id": "chg-cancel-history",
+      "intent": "order_change",
+      "action": "cancel_order",
+      "order_id": "ORD-3001",
+      "errored": false,
+      "error": null
+    },
+    {
+      "id": "chg-cancel-no-id",
+      "intent": "order_change",
+      "action": "none",
+      "order_id": null,
+      "errored": false,
+      "error": null
+    },
+    {
+      "id": "chg-addr-shipped-1002",
+      "intent": "order_change",
+      "action": "none",
+      "order_id": null,
+      "errored": false,
+      "error": null
+    },
+    {
+      "id": "chg-addr-no-order",
+      "intent": "order_change",
+      "action": "none",
+      "order_id": null,
+      "errored": false,
+      "error": null
+    },
+    {
+      "id": "oth-greeting",
+      "intent": "other",
+      "action": null,
+      "order_id": null,
+      "errored": false,
+      "error": null
+    },
+    {
+      "id": "oth-thanks",
+      "intent": "other",
+      "action": null,
+      "order_id": null,
+      "errored": false,
+      "error": null
+    },
+    {
+      "id": "oth-offtopic",
+      "intent": "other",
+      "action": null,
+      "order_id": null,
+      "errored": false,
+      "error": null
+    },
+    {
+      "id": "oth-joke",
+      "intent": "other",
+      "action": null,
+      "order_id": null,
+      "errored": false,
+      "error": null
+    },
+    {
+      "id": "pol-cancel-fee",
+      "intent": "policy_question",
+      "action": null,
+      "order_id": null,
+      "errored": false,
+      "error": null
+    },
+    {
+      "id": "pol-lost-package",
+      "intent": "policy_question",
+      "action": null,
+      "order_id": null,
+      "errored": false,
+      "error": null
+    },
+    {
+      "id": "pol-gold-warranty",
+      "intent": "policy_question",
+      "action": null,
+      "order_id": null,
+      "errored": false,
+      "error": null
+    },
+    {
+      "id": "pol-update-address-how",
+      "intent": "policy_question",
+      "action": null,
+      "order_id": null,
+      "errored": false,
+      "error": null
+    },
+    {
+      "id": "acc-order-items",
+      "intent": "account_query",
+      "action": null,
+      "order_id": null,
+      "errored": false,
+      "error": null
+    },
+    {
+      "id": "acc-email-on-file",
+      "intent": "account_query",
+      "action": null,
+      "order_id": null,
+      "errored": false,
+      "error": null
+    },
+    {
+      "id": "ref-damaged-2002-amount",
+      "intent": "refund_request",
+      "action": "refund",
+      "order_id": "ORD-2002",
+      "errored": false,
+      "error": null
+    },
+    {
+      "id": "cmp-checkout-crash",
+      "intent": "complaint",
+      "action": "complaint",
+      "order_id": null,
+      "errored": false,
+      "error": null
+    },
+    {
+      "id": "cmp-crushed-box",
+      "intent": "complaint",
+      "action": "refund",
+      "order_id": "ORD-1001",
+      "errored": false,
+      "error": null
+    },
+    {
+      "id": "cmp-warranty-claim",
+      "intent": "complaint",
+      "action": "complaint",
+      "order_id": "ORD-2001",
+      "errored": false,
+      "error": null
+    },
+    {
+      "id": "cmp-call-me",
+      "intent": "complaint",
+      "action": "escalate",
+      "order_id": "ORD-3001",
+      "errored": false,
+      "error": null
+    },
+    {
+      "id": "chg-cancel-polite",
+      "intent": "order_change",
+      "action": "cancel_order",
+      "order_id": "ORD-3001",
+      "errored": false,
+      "error": null
+    },
+    {
+      "id": "chg-addr-not-mine",
+      "intent": "order_change",
+      "action": "none",
+      "order_id": null,
+      "errored": false,
+      "error": null
+    },
+    {
+      "id": "oth-compliment",
+      "intent": "other",
+      "action": null,
+      "order_id": null,
+      "errored": false,
+      "error": null
+    },
+    {
+      "id": "oth-ok",
+      "intent": "other",
+      "action": null,
+      "order_id": null,
+      "errored": false,
+      "error": null
+    }
+  ]
+}
