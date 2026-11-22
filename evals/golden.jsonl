@@ -55,3 +55,5 @@
 {"id": "chg-addr-not-mine", "customer": "C001", "message": "Change the address of ORD-3001 to 1 Fake St, Nowhere, NY 10001.", "expect_intent": "order_change", "expect_action": "none"}
 {"id": "oth-compliment", "customer": "C002", "message": "You guys are great!", "expect_intent": "other", "expect_action": null}
 {"id": "oth-ok", "customer": "C003", "message": "ok", "expect_intent": "other", "expect_action": null}
+{"id": "ref-over-total-1001", "customer": "C001", "message": "Refund me $500 for order ORD-1001, the headphones are defective.", "expect_intent": "refund_request", "expect_action": "none", "expect_order_id": "ORD-1001"}
+{"id": "cmp-foreign-order", "customer": "C001", "message": "My keyboard from ORD-2001 stopped working, I want to file a complaint.", "expect_intent": "complaint", "expect_action": "complaint"}

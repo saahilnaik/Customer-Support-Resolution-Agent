@@ -1,8 +1,8 @@
 # Refund Policy
 
 ## Eligibility
-Orders can be refunded within 30 days of delivery. Items must be unused or defective.
-Orders delivered more than 30 days ago are not eligible for a refund, but may qualify for a warranty claim.
+Delivered orders can be refunded within 30 days of the order date. Items must be unused or defective.
+Delivered orders placed more than 30 days ago are not eligible for a refund, but may qualify for a warranty claim.
 
 ## Refund amounts
 Full refunds are given for defective, damaged or wrong items. Partial refunds may be offered for items returned in used condition.

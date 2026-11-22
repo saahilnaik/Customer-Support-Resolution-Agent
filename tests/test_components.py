@@ -1,6 +1,10 @@
+from datetime import datetime, timedelta, timezone
+
 import httpx
 import pytest
 
+from app.db.models import Order
+from app.db.session import session_scope
 from app.integrations.external_client import ExternalAPIError, ExternalClient
 from app.rag.retriever import Retriever
 from app.tools import support_tools as t
@@ -140,3 +144,22 @@ def test_process_refund_rechecks_window(external):
     res = t.process_refund("C002", "ORD-2001", 10.0, "keys stopped working")
     assert "error" in res and "30-day" in res["error"]
     assert external["refunds"] == []
+
+
+@pytest.mark.parametrize("age_days,allowed", [(29, True), (30, True), (31, False)])
+def test_refund_window_boundary(age_days, allowed):
+    with session_scope() as s:  # ORD-1001 is delivered; move its order date
+        s.get(Order, "ORD-1001").placed_at = datetime.now(timezone.utc) - timedelta(days=age_days, minutes=-5)
+    assert t.check_refund_eligibility("C001", "ORD-1001")["allowed"] is allowed
+
+
+def test_check_refund_amount_and_partial_refunds(external):
+    assert t.check_refund_amount("C002", "ORD-2002", 24.50)["allowed"] is True
+    over = t.check_refund_amount("C002", "ORD-2002", 24.51)
+    assert over["allowed"] is False and "exceeds order total" in over["reason"]
+    assert t.check_refund_amount("C002", "ORD-2002", 0)["allowed"] is False
+    assert "not found" in t.check_refund_amount("C001", "ORD-2002", 5)["reason"]  # foreign order
+    # a first partial refund shrinks what can still be refunded
+    assert "refund_ref" in t.process_refund("C002", "ORD-2002", 20.0, "partial")
+    assert t.check_refund_amount("C002", "ORD-2002", 5.0)["allowed"] is False
+    assert t.check_refund_amount("C002", "ORD-2002", 4.50)["allowed"] is True

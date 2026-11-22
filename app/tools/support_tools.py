@@ -87,6 +87,29 @@ def check_refund_eligibility(customer_id: str, order_id: str) -> dict:
     return {"allowed": True, "reason": ""}
 
 
+def order_belongs_to(customer_id: str, order_id: str) -> bool:
+    with session_scope() as s:
+        o = s.get(Order, order_id)
+        return bool(o and o.customer_id == customer_id)
+
+
+def check_refund_amount(customer_id: str, order_id: str, amount: float) -> dict:
+    """Deterministic amount check: order exists for this customer and amount fits within
+    the unrefunded remainder. Used before approval (so a reviewer never approves a refund
+    that cannot execute) and again by process_refund. Returns {"allowed", "reason"}."""
+    if amount <= 0:
+        return {"allowed": False, "reason": "refund amount must be positive"}
+    with session_scope() as s:
+        o = s.get(Order, order_id)
+        if not o or o.customer_id != customer_id:
+            return {"allowed": False, "reason": f"order {order_id} not found for this customer"}
+        already = sum(r.amount for r in s.query(Refund).filter(Refund.order_id == order_id))
+        if amount + already > o.total + 1e-9:
+            return {"allowed": False,
+                    "reason": f"refund exceeds order total ({o.total}); already refunded {already}"}
+    return {"allowed": True, "reason": ""}
+
+
 def process_refund(customer_id: str, order_id: str, amount: float, reason: str,
                    enforce_window: bool = True) -> dict:
     """Validates, calls the external payments API, records the refund.
@@ -97,16 +120,12 @@ def process_refund(customer_id: str, order_id: str, amount: float, reason: str,
         check = check_refund_eligibility(customer_id, order_id)
         if not check["allowed"]:
             return {"error": check["reason"]}
+    check = check_refund_amount(customer_id, order_id, amount)
+    if not check["allowed"]:
+        return {"error": check["reason"]}
     with session_scope() as s:
-        o = s.get(Order, order_id)
-        if not o or o.customer_id != customer_id:
-            return {"error": f"order {order_id} not found for this customer"}
-        prior = s.query(Refund).filter(Refund.order_id == order_id).all()
-        already = sum(r.amount for r in prior)
-        if amount + already > o.total + 1e-9:
-            return {"error": f"refund exceeds order total ({o.total}); already refunded {already}"}
         # Nth refund on this order -> its own key; HTTP retries of this call reuse it.
-        key = f"refund-{order_id}-{len(prior) + 1}"
+        key = f"refund-{order_id}-{s.query(Refund).filter(Refund.order_id == order_id).count() + 1}"
     try:
         ext = get_client().create_refund(order_id, amount, reason, idempotency_key=key)
     except ExternalAPIError as e:
