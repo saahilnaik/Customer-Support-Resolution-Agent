@@ -192,7 +192,7 @@ def test_llm_outage_after_retries_escalates(client, script_llm, monkeypatch):
     monkeypatch.setattr("app.config.Settings.llm_retry_max_wait", 0.0, raising=False)
     from app.config import get_settings
 
-    get_settings().llm_retry_attempts = 2
+    monkeypatch.setattr(get_settings(), "llm_retry_attempts", 2)  # restored after the test
     script_llm(RateLimitError("slow down"), RateLimitError("slow down"))
     body = chat(client, "hi").json()
     assert body["ticket_id"] and "human agent" in body["reply"]
