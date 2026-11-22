@@ -328,3 +328,66 @@ def test_complaint_with_foreign_order_id_is_detached(client, script_llm):
     body = chat(client, "Problem with ORD-2001").json()
     t = client.get(f"/tickets/{body['ticket_id']}").json()
     assert t.get("order_id") is None
+
+
+def test_thread_status_follows_approval_lifecycle(client, script_llm, external):
+    plan = j(action="refund", order_id="ORD-1001", amount=129.99, reason="defective")
+    script_llm(classify("refund_request", "ORD-1001"), "ORD-1001 total $129.99.", plan)
+    tid = chat(client, "Refund ORD-1001, it's defective").json()["thread_id"]
+    alice = {"X-API-Key": CUSTOMER_KEYS["C001"]}
+
+    st = client.get(f"/threads/{tid}", headers=alice).json()
+    assert st["status"] == "awaiting_approval" and st["approval"]["status"] == "pending"
+    assert client.get("/approvals").json()[0]["thread_id"] == tid  # still exactly one row
+    assert len(client.get("/approvals").json()) == 1  # GET must not add approval rows
+
+    client.post(f"/approvals/{tid}", json={"approve": True, "note": "ok internal"})
+    st = client.get(f"/threads/{tid}", headers=alice).json()
+    assert st["status"] == "completed" and "RF-TEST" in st["reply"]
+    assert st["approval"]["status"] == "approved"
+    assert "note" not in st["approval"] and "decided_by" not in st["approval"]  # customer view
+    rv = client.get(f"/threads/{tid}").json()  # reviewer key
+    assert rv["approval"]["note"] == "ok internal" and rv["approval"]["decided_by"]
+
+
+def test_thread_status_hides_other_customers_and_unknown_threads(client, script_llm):
+    script_llm(classify("policy_question"), "Answer.")
+    tid = chat(client, "What is your refund policy?").json()["thread_id"]
+    bob = {"X-API-Key": CUSTOMER_KEYS["C002"]}
+    assert client.get(f"/threads/{tid}", headers=bob).status_code == 404
+    assert client.get("/threads/does-not-exist").status_code == 404
+    assert client.get(f"/threads/{tid}", headers={"X-API-Key": "nope"}).status_code == 401
+    assert client.get(f"/threads/{tid}").json()["approval"] is None
+
+
+def _make_tickets(n, customer="C001", status="open"):
+    from app.db.models import Ticket
+    from app.db.session import session_scope
+    with session_scope() as s:
+        for i in range(n):
+            s.add(Ticket(customer_id=customer, category="other", description=f"t{i}", status=status))
+
+
+def test_ticket_patch_is_reviewer_only_and_validated(client):
+    _make_tickets(1)
+    tid = client.get("/tickets").json()[0]["id"]
+    alice = {"X-API-Key": CUSTOMER_KEYS["C001"]}
+    assert client.patch(f"/tickets/{tid}", json={"status": "resolved"}, headers=alice).status_code == 403
+    assert client.patch(f"/tickets/{tid}", json={"status": "bogus"}).status_code == 422
+    assert client.patch("/tickets/9999", json={"status": "resolved"}).status_code == 404
+    r = client.patch(f"/tickets/{tid}", json={"status": "resolved"})
+    assert r.status_code == 200 and r.json()["status"] == "resolved"
+    assert client.get(f"/tickets/{tid}", headers=alice).json()["status"] == "resolved"
+    assert [t["id"] for t in client.get("/tickets?status=resolved").json()] == [tid]
+    assert client.get("/tickets?status=open").json() == []
+
+
+def test_ticket_list_pagination(client):
+    _make_tickets(5)
+    ids = [t["id"] for t in client.get("/tickets").json()]
+    assert len(ids) == 5
+    assert [t["id"] for t in client.get("/tickets?limit=2").json()] == ids[:2]
+    assert [t["id"] for t in client.get("/tickets?limit=2&offset=4").json()] == ids[4:]
+    assert client.get("/tickets?limit=0").status_code == 422
+    assert client.get("/tickets?limit=201").status_code == 422
+    assert client.get("/approvals?limit=1&offset=0").status_code == 200
