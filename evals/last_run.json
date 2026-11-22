@@ -1,9 +1,9 @@
 {
   "summary": {
-    "total": 57,
-    "errors": 0,
-    "intent_accuracy": 1.0,
-    "action_accuracy": 0.9649122807017544,
+    "total": 59,
+    "errors": 1,
+    "intent_accuracy": 0.9830508474576272,
+    "action_accuracy": 0.9152542372881356,
     "per_intent": {
       "policy_question": {
         "n": 12,
@@ -16,14 +16,14 @@
         "action_accuracy": 1.0
       },
       "refund_request": {
-        "n": 9,
-        "intent_accuracy": 1.0,
-        "action_accuracy": 0.8888888888888888
+        "n": 10,
+        "intent_accuracy": 0.9,
+        "action_accuracy": 0.7
       },
       "complaint": {
-        "n": 10,
+        "n": 11,
         "intent_accuracy": 1.0,
-        "action_accuracy": 0.9
+        "action_accuracy": 0.8181818181818182
       },
       "order_change": {
         "n": 12,
@@ -44,10 +44,10 @@
         "account_query": 8
       },
       "refund_request": {
-        "refund_request": 9
+        "refund_request": 10
       },
       "complaint": {
-        "complaint": 10
+        "complaint": 11
       },
       "order_change": {
         "order_change": 12
@@ -58,13 +58,22 @@
     },
     "failures": [
       {
-        "id": "ref-damaged-1001",
-        "message": "I want a full refund for order ORD-1001, the headphones arrived damaged.",
+        "id": "ref-unused-2002",
+        "message": "Please refund ORD-2002, I don't want the phone case.",
         "expect_intent": "refund_request",
         "got_intent": "refund_request",
         "expect_action": "refund",
         "got_action": "none",
         "error": null
+      },
+      {
+        "id": "ref-damaged-2002-amount",
+        "message": "ORD-2002 arrived damaged, I want my $24.50 back.",
+        "expect_intent": "refund_request",
+        "got_intent": "refund_request",
+        "expect_action": "refund",
+        "got_action": "escalate",
+        "error": "resolution_plan: RateLimitError: Error code: 429 - {'error': {'message': 'Rate limit reached for model `openai/gpt-oss-120b` in organization `org_01kpqbar7mezmrfpsjzvjzja5f` service tier `on_demand` on tokens per minute (TPM): Limit 8000, Used 6882, Requested 1204. Please try again in 644.999999ms. Need more tokens? Upgrade to Dev Tier today at https://console.groq.com/settings/billing', 'type': 'tokens', 'code': 'rate_limit_exceeded'}}"
       },
       {
         "id": "cmp-crushed-box",
@@ -73,6 +82,24 @@
         "got_intent": "complaint",
         "expect_action": "complaint",
         "got_action": "refund",
+        "error": null
+      },
+      {
+        "id": "ref-over-total-1001",
+        "message": "Refund me $500 for order ORD-1001, the headphones are defective.",
+        "expect_intent": "refund_request",
+        "got_intent": "refund_request",
+        "expect_action": "none",
+        "got_action": "refund",
+        "error": null
+      },
+      {
+        "id": "cmp-foreign-order",
+        "message": "My keyboard from ORD-2001 stopped working, I want to file a complaint.",
+        "expect_intent": "complaint",
+        "got_intent": "complaint",
+        "expect_action": "complaint",
+        "got_action": "none",
         "error": null
       }
     ]
@@ -193,7 +220,7 @@
     {
       "id": "ref-damaged-1001",
       "intent": "refund_request",
-      "action": "none",
+      "action": "refund",
       "order_id": "ORD-1001",
       "errored": false,
       "error": null
@@ -201,7 +228,7 @@
     {
       "id": "ref-unused-2002",
       "intent": "refund_request",
-      "action": "refund",
+      "action": "none",
       "order_id": "ORD-2002",
       "errored": false,
       "error": null
@@ -465,10 +492,10 @@
     {
       "id": "ref-damaged-2002-amount",
       "intent": "refund_request",
-      "action": "refund",
-      "order_id": "ORD-2002",
-      "errored": false,
-      "error": null
+      "action": "escalate",
+      "order_id": null,
+      "errored": true,
+      "error": "resolution_plan: RateLimitError: Error code: 429 - {'error': {'message': 'Rate limit reached for model `openai/gpt-oss-120b` in organization `org_01kpqbar7mezmrfpsjzvjzja5f` service tier `on_demand` on tokens per minute (TPM): Limit 8000, Used 6882, Requested 1204. Please try again in 644.999999ms. Need more tokens? Upgrade to Dev Tier today at https://console.groq.com/settings/billing', 'type': 'tokens', 'code': 'rate_limit_exceeded'}}"
     },
     {
       "id": "cmp-checkout-crash",
@@ -530,6 +557,22 @@
       "id": "oth-ok",
       "intent": "other",
       "action": null,
+      "order_id": null,
+      "errored": false,
+      "error": null
+    },
+    {
+      "id": "ref-over-total-1001",
+      "intent": "refund_request",
+      "action": "refund",
+      "order_id": "ORD-1001",
+      "errored": false,
+      "error": null
+    },
+    {
+      "id": "cmp-foreign-order",
+      "intent": "complaint",
+      "action": "none",
       "order_id": null,
       "errored": false,
       "error": null

@@ -56,6 +56,22 @@ def fresh_db():
     seed()
 
 
+@pytest.fixture(autouse=True)
+def reset_mock_service():
+    """The mock third-party API keeps module-level in-memory state; isolate tests from it."""
+    from app.integrations import mock_service as m
+
+    def clear():
+        m._cancelled.clear()
+        m._addresses.clear()
+        m._refunds.clear()
+        m._state["fail"] = False
+
+    clear()
+    yield
+    clear()
+
+
 @pytest.fixture
 def script_llm(monkeypatch):
     def _install(*messages) -> ScriptedChat:
