@@ -309,3 +309,22 @@ def test_refund_outside_window_becomes_complaint_even_if_planner_proposes_refund
     assert external["refunds"] == []
     t = client.get(f"/tickets/{body['ticket_id']}").json()
     assert t["category"] == "refund_outside_window" and t["status"] == "open"
+
+
+def test_refund_above_order_total_is_rejected_before_approval(client, script_llm, external):
+    # $500 on a $129.99 order: must not reach a reviewer (it could never execute)
+    plan = j(action="refund", order_id="ORD-1001", amount=500, reason="defective")
+    script_llm(classify("refund_request", "ORD-1001"), "ORD-1001 total $129.99.", plan)
+    body = chat(client, "Refund $500 for ORD-1001").json()
+    assert body["status"] == "completed" and "exceeds order total" in body["reply"]
+    assert client.get("/approvals").json() == [] and external["refunds"] == []
+
+
+def test_complaint_with_foreign_order_id_is_detached(client, script_llm):
+    # C001 mentions ORD-2001, which belongs to C002: the ticket must not reference it
+    plan = j(action="complaint", order_id="ORD-2001", category="other",
+             description="Question about an order", reason="other", message="We'll follow up.")
+    script_llm(classify("complaint", "ORD-2001"), plan)
+    body = chat(client, "Problem with ORD-2001").json()
+    t = client.get(f"/tickets/{body['ticket_id']}").json()
+    assert t.get("order_id") is None

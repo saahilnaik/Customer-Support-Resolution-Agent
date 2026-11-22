@@ -156,6 +156,14 @@ def resolution_plan(state):
                 "description": f"Refund requested but ineligible: {check['reason']}",
                 "reason": "outside refund window", "message": check["reason"],
             }
+        else:  # also reject refunds that could not execute, before a reviewer sees them
+            check = tools.check_refund_amount(state["customer_id"], plan["order_id"], plan["amount"])
+            if not check["allowed"]:
+                plan = {
+                    "action": "none", "order_id": plan["order_id"], "message": check["reason"],
+                }
+    elif plan.get("order_id") and not tools.order_belongs_to(state["customer_id"], plan["order_id"]):
+        plan["order_id"] = None  # never attach another customer's order to a ticket
     return {"proposed_action": plan, "retrieved_docs": policy_docs}
 
 
